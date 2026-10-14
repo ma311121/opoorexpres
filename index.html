@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>عبور إكسبريس | Ubour Express</title>
 <meta name="description" content="منصتك الشاملة لنقل الركاب والشحن داخل اليمن وإلى السعودية — يربط المسافات ويختصر الطريق">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https:; connect-src 'self' https://yytkkvgepauahwfvyicp.supabase.co wss://yytkkvgepauahwfvyicp.supabase.co; manifest-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdn.jsdelivr.net https://js.sentry-cdn.com https://browser.sentry-cdn.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https:; connect-src 'self' https://yytkkvgepauahwfvyicp.supabase.co wss://yytkkvgepauahwfvyicp.supabase.co https://o4512211789086720.ingest.us.sentry.io; manifest-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'">
 <meta name="referrer" content="strict-origin-when-cross-origin">
 <meta name="theme-color" content="#060E19">
 <meta name="color-scheme" content="dark">
@@ -15,6 +15,8 @@
 <link rel="manifest" href="manifest.json">
 
 <!-- مكتبة Supabase (قاعدة البيانات والمصادقة الحقيقية) -->
+<script src="sentry-config.js"></script>
+<script src="https://js.sentry-cdn.com/02ec9669ffc0edabbbdba502f0076f5f.min.js" crossorigin="anonymous"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <link rel="icon" href="favicon.ico" sizes="any">
 <link rel="icon" href="icons/icon-192.png" type="image/png">
@@ -1083,19 +1085,6 @@ button, a, .nav-item { touch-action: manipulation; }
 .input-wrap input[type="date"]::-webkit-calendar-picker-indicator,
 .input-wrap input[type="time"]::-webkit-calendar-picker-indicator { filter: invert(0.8); opacity: 0.8; }
 
-#ios-install-banner {
-  display: none; position: fixed; left: 12px; right: 12px; max-width: 456px; margin: 0 auto; z-index: 300;
-  bottom: calc(12px + env(safe-area-inset-bottom, 0px));
-  align-items: center; gap: 12px; padding: 14px 16px;
-  background: var(--navy-900); border: 1px solid rgba(201,161,92,0.45); border-radius: 18px;
-  box-shadow: 0 12px 40px rgba(0,0,0,0.6); color: var(--text-primary);
-}
-#ios-install-banner.show { display: flex; }
-#ios-install-banner .ios-banner-text { flex: 1; display: flex; flex-direction: column; gap: 4px; font-size: 13px; line-height: 1.7; color: var(--text-secondary); }
-#ios-install-banner strong { color: var(--gold-400); font-size: 14px; }
-#ios-install-banner svg { vertical-align: middle; color: var(--teal-500); }
-#ios-install-banner button { flex-shrink: 0; background: var(--gold-400); color: #1a1205; border: none; border-radius: 12px; padding: 10px 14px; font-weight: 800; font-family: inherit; font-size: 13px; }
-
 #external-fallback {
   position: fixed; left: 12px; right: 12px; max-width: 456px; margin: 0 auto; z-index: 310;
   bottom: calc(92px + env(safe-area-inset-bottom, 0px));
@@ -1106,6 +1095,66 @@ button, a, .nav-item { touch-action: manipulation; }
 #external-fallback span { flex: 1; }
 #external-fallback a { background: var(--teal-500); color: #031512; border-radius: 10px; padding: 9px 14px; font-weight: 800; text-decoration: none; }
 #external-fallback button { background: none; border: none; color: var(--text-muted); font-family: inherit; font-size: 13px; }
+
+/* =========================================================================
+   v5.1 — شريط التثبيت + بطاقة التحميل + نافذة الخطوات
+   ========================================================================= */
+#install-bar {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 320; display: flex; justify-content: center;
+  padding: calc(10px + env(safe-area-inset-top, 0px)) 12px 10px;
+  transform: translateY(-120%); transition: transform 0.35s ease; pointer-events: none;
+}
+#install-bar.show { transform: translateY(0); pointer-events: auto; }
+#install-bar .ib-inner {
+  width: 100%; max-width: 456px; display: flex; align-items: center; gap: 10px;
+  background: var(--navy-800); border: 1px solid rgba(201,161,92,0.5); border-radius: 16px;
+  padding: 10px 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.55);
+}
+#install-bar .ib-icon img { width: 42px; height: 42px; border-radius: 10px; display: block; }
+#install-bar .ib-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+#install-bar .ib-title { font-weight: 800; font-size: 14px; color: var(--text-primary); }
+#install-bar .ib-sub { font-size: 12px; color: var(--text-secondary); }
+#install-bar .ib-action { flex-shrink: 0; background: var(--gold-400); color: #1a1205; border: none; border-radius: 12px; padding: 9px 16px; font-weight: 800; font-family: inherit; font-size: 13px; }
+#install-bar .ib-close { flex-shrink: 0; background: none; border: none; color: var(--text-muted); font-size: 18px; line-height: 1; padding: 6px; font-family: inherit; }
+
+#install-sheet { position: fixed; inset: 0; z-index: 330; display: none; align-items: flex-end; justify-content: center; background: rgba(2,6,12,0.72); }
+#install-sheet.show { display: flex; }
+#install-sheet .is-panel {
+  width: 100%; max-width: 480px; background: var(--navy-900); border-top: 1px solid var(--navy-border);
+  border-radius: 24px 24px 0 0; padding: 22px 22px calc(22px + env(safe-area-inset-bottom, 0px));
+  max-height: 86vh; max-height: 86dvh; overflow: auto;
+}
+#install-sheet .is-title { font-size: 18px; font-weight: 800; color: var(--gold-400); margin-bottom: 14px; }
+#install-sheet .is-steps { margin: 0; padding: 0; list-style: none; counter-reset: s; display: flex; flex-direction: column; gap: 12px; }
+#install-sheet .is-steps li { counter-increment: s; display: flex; gap: 12px; align-items: flex-start; color: var(--text-primary); font-size: 14px; line-height: 1.7; }
+#install-sheet .is-steps li::before {
+  content: counter(s, arabic-indic); flex-shrink: 0; width: 26px; height: 26px; border-radius: 50%;
+  background: rgba(201,161,92,0.18); color: var(--gold-400); font-weight: 800; font-size: 13px;
+  display: flex; align-items: center; justify-content: center;
+}
+#install-sheet .is-note { margin-top: 12px; font-size: 12.5px; color: var(--text-secondary); line-height: 1.7; }
+#install-sheet .is-actions { margin-top: 18px; display: flex; gap: 10px; }
+#install-sheet .is-actions button { flex: 1; border-radius: 14px; padding: 13px; font-weight: 800; font-family: inherit; font-size: 14px; border: 1px solid var(--navy-border); background: var(--navy-800); color: var(--text-primary); }
+#install-sheet .is-actions button.primary { background: var(--gold-400); color: #1a1205; border: none; }
+
+.dl-card { margin: 0 var(--space-5) var(--space-5); padding: var(--space-4); display: flex; flex-direction: column; gap: 12px;
+  background: linear-gradient(180deg, rgba(24,41,67,0.7), rgba(16,29,51,0.85)); border: 1px solid var(--navy-border); border-radius: var(--radius-md); }
+.dl-head { display: flex; flex-direction: column; gap: 4px; }
+.dl-title { font-size: 17px; font-weight: 800; color: var(--text-primary); }
+.dl-sub { font-size: 12.5px; color: var(--text-secondary); line-height: 1.6; }
+.dl-row { display: flex; align-items: center; gap: 12px; width: 100%; padding: 12px; border-radius: 14px; border: 1px solid var(--navy-border);
+  background: var(--navy-900); color: var(--text-primary); text-decoration: none; font-family: inherit; text-align: right; cursor: pointer; }
+.dl-row .dl-ic { width: 44px; height: 44px; border-radius: 12px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.dl-row .dl-txt { flex: 1; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.dl-row .dl-label { font-weight: 800; font-size: 15px; }
+.dl-row .dl-meta { font-size: 12px; color: var(--text-secondary); }
+.dl-android .dl-ic { background: #3ddc84; color: #05230f; }
+.dl-ios .dl-ic { background: var(--white); color: #0a0a0a; }
+.dl-pwa { border-color: rgba(201,161,92,0.5); background: rgba(201,161,92,0.08); }
+.dl-pwa .dl-ic { background: var(--gold-400); color: #1a1205; }
+.dl-row.disabled { opacity: 0.6; pointer-events: none; }
+.dl-badge { font-size: 11px; font-weight: 800; padding: 3px 8px; border-radius: 999px; background: rgba(110,118,144,0.25); color: var(--text-secondary); }
+.dl-hint { font-size: 12px; color: var(--text-muted); line-height: 1.7; }
 </style>
 </head>
 <body>
@@ -1433,6 +1482,7 @@ button, a, .nav-item { touch-action: manipulation; }
         </div>
         <div class="section-title">الرحلات المتاحة<span class="line"></span></div>
         <div class="service-cards" id="traveler-trips-list" style="margin-bottom:24px;"></div>
+        <div data-download-slot></div>
       </div>
 
       <div id="traveler-view-bookings" class="home-view hidden">
@@ -1457,6 +1507,7 @@ button, a, .nav-item { touch-action: manipulation; }
           <div class="profile-avatar"><span id="icon-traveler-avatar"></span></div>
           <div class="profile-row"><span class="label">رقم الجوال</span><span class="value" id="traveler-profile-phone">—</span></div>
         </div>
+        <div data-download-slot></div>
         <div style="padding: 0 var(--space-5);">
           <button class="btn btn-ghost" id="btn-traveler-logout"><span id="icon-traveler-logout"></span><span class="btn-label">تسجيل الخروج</span></button>
         </div>
@@ -1509,6 +1560,7 @@ button, a, .nav-item { touch-action: manipulation; }
           </div>
         </div>
         <div class="service-cards" id="office-requests-list" style="margin-bottom:24px;"></div>
+        <div data-download-slot></div>
       </div>
 
       <div id="office-view-trips" class="home-view hidden">
@@ -1549,7 +1601,8 @@ button, a, .nav-item { touch-action: manipulation; }
           </div>
           <div class="field">
             <label>شعار المكتب / السائق</label>
-            <div class="logo-picker" id="btn-pick-office-logo">
+            <div data-download-slot></div>
+        <div class="logo-picker" id="btn-pick-office-logo">
               <img id="office-logo-preview" class="logo-picker-preview hidden" alt="معاينة الشعار">
               <span id="office-logo-picker-placeholder" class="logo-picker-placeholder">
                 <span id="icon-upload"></span>
@@ -1752,16 +1805,6 @@ button, a, .nav-item { touch-action: manipulation; }
     </div>
   </div>
 
-</div>
-
-<div id="ios-install-banner" role="dialog" aria-label="تثبيت التطبيق على الآيفون">
-  <div class="ios-banner-text">
-    <strong>ثبّت «عبور إكسبريس» على آيفونك</strong>
-    <span>اضغط زر المشاركة
-      <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="M8 7l4-4 4 4"/><path d="M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7"/></svg>
-      أسفل الشاشة، ثم اختر «إضافة إلى الشاشة الرئيسية».</span>
-  </div>
-  <button type="button" data-ios-banner-close>فهمت</button>
 </div>
 
 <div id="toast-container"></div>

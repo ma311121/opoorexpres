@@ -39,6 +39,39 @@ function showExternalFallback(url) {
   setTimeout(() => { if (box.parentNode) box.remove(); }, 20000);
 }
 
+/* =========================================================================
+   v5.1 — إرسال الأخطاء إلى Sentry (إن كان محمَّلاً) بدون إرسال أخطاء الأعمال المعتادة
+   ========================================================================= */
+const _EXPECTED_ERRORS = /(NOT_ENOUGH_SEATS|TRIP_NOT_ACTIVE|TOO_MANY_OPEN_BOOKINGS|PHONE_REQUIRED|USER_NOT_REGISTERED|TRIP_CANCELLED|SEATS_BELOW_BOOKED|INVALID_SEATS|row-level security|JWT expired|Invalid login credentials|duplicate key)/i;
+const _reportedAt = {};
+
+function reportError(err, where) {
+  try {
+    if (!window.Sentry || typeof window.Sentry.captureException !== 'function') return;
+    const e = err instanceof Error ? err : new Error(String((err && (err.message || err.details)) || err || 'خطأ غير معروف') + (err && err.code ? ' [' + err.code + ']' : ''));
+    if (_EXPECTED_ERRORS.test(e.message)) return;
+    const key = (where || '') + '|' + e.message.slice(0, 80);
+    const now = Date.now();
+    if (_reportedAt[key] && now - _reportedAt[key] < 60000) return;     // لا نكرّر نفس الخطأ خلال دقيقة
+    _reportedAt[key] = now;
+    window.Sentry.withScope ? window.Sentry.withScope((scope) => { if (where) scope.setTag('where', String(where)); window.Sentry.captureException(e); }) : window.Sentry.captureException(e);
+  } catch (x) { /* لا يؤثر على التطبيق */ }
+}
+
+(function hookConsoleError() {
+  const orig = console.error;
+  console.error = function () {
+    try { orig.apply(console, arguments); } catch (x) { /* تجاهل */ }
+    try { reportError(arguments[0], 'console.error'); } catch (x) { /* تجاهل */ }
+  };
+})();
+
+/* اختبار اختياري: افتح الرابط مع ?sentry-test=1 ليصل خطأ تجريبي إلى Sentry (لا يظهر للمستخدمين العاديين) */
+if (/[?&]sentry-test=1(?:&|$)/.test(location.search)) {
+  setTimeout(function () { throw new Error('Sentry test (intentional) — اختبار متعمد'); }, 1500);
+}
+
+
 // شعار العلامة التجارية مضمّن مباشرة كنص Base64 (وليس كملف صورة خارجي).
 // هذا يضمن ظهوره دائماً بغض النظر عن طريقة رفع المشروع على أي استضافة —
 // حتى لو نُسي مجلد icons/ بالخطأ عند الرفع، يبقى الشعار ظاهراً لأنه جزء
@@ -68,6 +101,13 @@ const APP_CONFIG = {
   name: 'عبور إكسبريس',
   nameShort: 'عبور',
   nameEn: 'Ubour Express',
+  version: '5.1.0',
+
+  // ---- تحميل التطبيق (بطاقة "حمّل التطبيق") ----
+  // رابط ملف APK المباشر (مثلاً من GitHub Releases). اتركه '' فيظهر "قريباً".
+  apkUrl: '',
+  apkVersion: '',      // مثل '1.0'
+  apkSizeMb: '',       // مثل '3'
   tagline: 'يربط المسافات .. يختصر الطريق',
   subtitle: 'بوابتك الشاملة للنقل البري، محلياً وإلى السعودية',
 
@@ -2124,24 +2164,217 @@ document.addEventListener('input', (e) => {
   }
 }, true);
 
-function initIosInstallBanner() {
-  try {
-    const ua = navigator.userAgent || '';
-    const isIOS = /iPad|iPhone|iPod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-    const standalone = window.navigator.standalone === true ||
-      (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches);
-    if (!isIOS || standalone) return;
-    let dismissed = false;
-    try { dismissed = localStorage.getItem('ubour_ios_banner_dismissed') === '1'; } catch (e) { /* تجاهل */ }
-    if (dismissed) return;
-    const banner = document.getElementById('ios-install-banner');
-    if (!banner) return;
-    setTimeout(() => banner.classList.add('show'), 2500);
-    const closeBtn = banner.querySelector('[data-ios-banner-close]');
-    if (closeBtn) closeBtn.addEventListener('click', () => {
-      banner.classList.remove('show');
-      try { localStorage.setItem('ubour_ios_banner_dismissed', '1'); } catch (e) { /* تجاهل */ }
+
+
+/* =========================================================================
+   v5.1 — شريط التثبيت العلوي + بطاقة "حمّل التطبيق" + نافذة الخطوات
+   • أندرويد (Chrome): زر "تثبيت" بضغطة واحدة عبر beforeinstallprompt، وإلا خطوات يدوية.
+   • آيفون: لا يسمح Apple بالتثبيت البرمجي، فنافذة خطوات واضحة (Safari ← مشاركة ← إضافة).
+   • داخل متصفحات التطبيقات (واتساب/تيليغرام/فيسبوك...): نطلب فتح الرابط في المتصفح مع زر نسخ.
+   • يختفي كل شيء داخل التطبيق المثبّت. ملف APK: APP_CONFIG.apkUrl (فارغ = "قريباً").
+   ========================================================================= */
+const InstallUI = (() => {
+  const ua = navigator.userAgent || '';
+  const DISMISS_KEY = 'ubour_install_bar_dismissed_at';
+  const DISMISS_DAYS = 7;
+  const SHOW_DELAY_MS = 2500;
+  const ICONS = {
+    android: '<svg viewBox="0 0 24 24" width="26" height="26" fill="currentColor" aria-hidden="true"><path d="M6 18c0 .55.45 1 1 1h1v3.5a1.5 1.5 0 0 0 3 0V19h2v3.5a1.5 1.5 0 0 0 3 0V19h1c.55 0 1-.45 1-1V8H6v10zM3.5 8A1.5 1.5 0 0 0 2 9.5v7a1.5 1.5 0 0 0 3 0v-7A1.5 1.5 0 0 0 3.5 8zm17 0A1.5 1.5 0 0 0 19 9.5v7a1.5 1.5 0 0 0 3 0v-7A1.5 1.5 0 0 0 20.5 8zM15.53 2.16l1.3-1.3a.5.5 0 0 0-.71-.71l-1.48 1.48A5.98 5.98 0 0 0 12 1c-.96 0-1.86.23-2.66.63L7.85.15a.5.5 0 0 0-.7.71l1.3 1.3A5.99 5.99 0 0 0 6 7h12a5.99 5.99 0 0 0-2.47-4.84zM10 5H9V4h1v1zm5 0h-1V4h1v1z"/></svg>',
+    phone: '<svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="6" y="2" width="12" height="20" rx="3"/><path d="M11 18h2"/></svg>',
+    download: '<svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="M7 11l5 5 5-5"/><path d="M5 21h14"/></svg>'
+  };
+
+  const isIOS = /iPad|iPhone|iPod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  const isAndroid = /Android/i.test(ua);
+  const isMobile = isIOS || isAndroid;
+  const inAppBrowser = /FBAN|FBAV|Instagram|Line\/|MicroMessenger|Snapchat|TikTok|musical_ly|Twitter|; wv\)/i.test(ua)
+    || (isIOS && !/Safari\//.test(ua) && !/CriOS|FxiOS|EdgiOS|OPiOS/.test(ua));
+  const isIOSSafari = isIOS && /Safari\//.test(ua) && !/CriOS|FxiOS|EdgiOS|OPiOS/.test(ua);
+
+  let deferredPrompt = null;
+  let installed = false;
+  let ready = false;      // بعد مرور SHOW_DELAY_MS لا نُظهر الشريط فجأة مع تحميل الصفحة
+  let bar = null;
+  let sheet = null;
+
+  function standalone() {
+    try {
+      return window.navigator.standalone === true
+        || (window.matchMedia && (window.matchMedia('(display-mode: standalone)').matches || window.matchMedia('(display-mode: fullscreen)').matches))
+        || (document.referrer || '').indexOf('android-app://') === 0;
+    } catch (e) { return false; }
+  }
+  function dismissedRecently() {
+    try { const t = Number(localStorage.getItem(DISMISS_KEY) || 0); return !!t && (Date.now() - t) < DISMISS_DAYS * 86400000; } catch (e) { return false; }
+  }
+  function markDismissed() { try { localStorage.setItem(DISMISS_KEY, String(Date.now())); } catch (e) { /* تجاهل */ } }
+  function siteUrl() { return location.origin + location.pathname; }
+
+  async function copyLink() {
+    const url = siteUrl();
+    try { await navigator.clipboard.writeText(url); showToast('تم نسخ الرابط', 'success'); return; } catch (e) { /* نجرّب البديل */ }
+    try {
+      const ta = document.createElement('textarea');
+      ta.value = url; ta.setAttribute('readonly', ''); ta.style.position = 'fixed'; ta.style.opacity = '0';
+      document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove();
+      showToast('تم نسخ الرابط', 'success');
+    } catch (e) { showToast(url, 'info', 6000); }
+  }
+
+  function guide(platform) {
+    const p = platform || (isIOS ? 'ios' : isAndroid ? 'android' : 'other');
+    const sameDevice = (p === 'ios' && isIOS) || (p === 'android' && isAndroid);
+    if (p === 'ios') {
+      if (sameDevice && inAppBrowser) {
+        return { title: 'افتح الرابط في Safari أولاً', copy: true,
+          steps: ['اضغط على أيقونة ⋯ أو المشاركة داخل هذا المتصفح', 'اختر «فتح في Safari»', 'في Safari اضغط زر المشاركة ثم «إضافة إلى الشاشة الرئيسية»'] };
+      }
+      return { title: 'تثبيت التطبيق على الآيفون', copy: !(sameDevice && isIOSSafari) && sameDevice,
+        steps: ['اضغط زر المشاركة (المربع والسهم للأعلى) أسفل شاشة Safari', 'مرّر لأسفل واختر «إضافة إلى الشاشة الرئيسية»', 'اضغط «إضافة» في أعلى الشاشة'],
+        note: sameDevice && !isIOSSafari ? 'إن لم تجد الخيار في هذا المتصفح فافتح الرابط في Safari.' : (sameDevice ? '' : 'افتح رابط الموقع من آيفونك في Safari ثم اتبع هذه الخطوات.') };
+    }
+    if (p === 'android') {
+      if (sameDevice && inAppBrowser) {
+        return { title: 'افتح الرابط في Chrome أولاً', copy: true,
+          steps: ['اضغط ⋮ أو أيقونة المتصفح في أعلى الشاشة', 'اختر «فتح في المتصفح» (Open in Chrome)', 'ثم اضغط «تثبيت التطبيق» من هناك'] };
+      }
+      return { title: 'تثبيت التطبيق على أندرويد', copy: false,
+        steps: ['اضغط ⋮ (قائمة المتصفح) أعلى الشاشة', 'اختر «تثبيت التطبيق» أو «إضافة إلى الشاشة الرئيسية»', 'اضغط «تثبيت»'] };
+    }
+    return { title: 'تثبيت التطبيق', copy: true,
+      steps: ['افتح رابط الموقع من هاتفك', 'أندرويد: Chrome ← ⋮ ← تثبيت التطبيق', 'آيفون: Safari ← مشاركة ← إضافة إلى الشاشة الرئيسية'] };
+  }
+
+  function el(tag, cls, text) {
+    const n = document.createElement(tag);
+    if (cls) n.className = cls;
+    if (text != null) n.textContent = text;
+    return n;
+  }
+
+  function closeSheet() { if (sheet) sheet.classList.remove('show'); }
+  function openSheet(platform) {
+    const g = guide(platform);
+    if (!sheet) {
+      sheet = el('div'); sheet.id = 'install-sheet'; sheet.setAttribute('role', 'dialog'); sheet.setAttribute('aria-modal', 'true');
+      sheet.addEventListener('click', (e) => { if (e.target === sheet) closeSheet(); });
+      document.body.appendChild(sheet);
+    }
+    sheet.textContent = '';
+    const panel = el('div', 'is-panel');
+    panel.appendChild(el('div', 'is-title', g.title));
+    const ol = el('ol', 'is-steps');
+    g.steps.forEach((s) => ol.appendChild(el('li', null, s)));
+    panel.appendChild(ol);
+    if (g.note) panel.appendChild(el('div', 'is-note', g.note));
+    const actions = el('div', 'is-actions');
+    if (g.copy) { const c = el('button', null, 'نسخ الرابط'); c.type = 'button'; c.addEventListener('click', copyLink); actions.appendChild(c); }
+    const ok = el('button', 'primary', 'فهمت'); ok.type = 'button'; ok.addEventListener('click', closeSheet);
+    actions.appendChild(ok);
+    panel.appendChild(actions);
+    sheet.appendChild(panel);
+    sheet.classList.add('show');
+  }
+
+  async function promptInstall() {
+    if (deferredPrompt) {
+      const p = deferredPrompt; deferredPrompt = null;
+      try { p.prompt(); const choice = await p.userChoice; if (choice && choice.outcome === 'accepted') installed = true; } catch (e) { /* تجاهل */ }
+      refresh();
+      return;
+    }
+    openSheet();
+  }
+
+  function ensureBar() {
+    if (bar) return bar;
+    bar = el('div'); bar.id = 'install-bar'; bar.setAttribute('role', 'region'); bar.setAttribute('aria-label', 'تثبيت التطبيق');
+    const inner = el('div', 'ib-inner');
+    const icon = el('div', 'ib-icon'); const img = document.createElement('img'); img.src = 'icons/icon-192.png'; img.alt = ''; icon.appendChild(img);
+    const txt = el('div', 'ib-text'); txt.appendChild(el('div', 'ib-title', 'ثبّت تطبيق عبور على هاتفك')); const sub = el('div', 'ib-sub'); sub.setAttribute('data-ib-sub', ''); txt.appendChild(sub);
+    const act = el('button', 'ib-action'); act.type = 'button'; act.setAttribute('data-ib-action', ''); act.addEventListener('click', promptInstall);
+    const close = el('button', 'ib-close', '✕'); close.type = 'button'; close.setAttribute('aria-label', 'إغلاق');
+    close.addEventListener('click', () => { markDismissed(); bar.classList.remove('show'); });
+    inner.append(icon, txt, act, close);
+    bar.appendChild(inner);
+    document.body.appendChild(bar);
+    return bar;
+  }
+
+  function row(kind, icon, label, meta, tag) {
+    const r = el(tag || 'button', 'dl-row ' + kind);
+    if (r.tagName === 'BUTTON') r.type = 'button';
+    const ic = el('span', 'dl-ic'); ic.innerHTML = icon;              // أيقونات ثابتة من الكود فقط
+    const t = el('span', 'dl-txt'); t.appendChild(el('span', 'dl-label', label)); if (meta) t.appendChild(el('span', 'dl-meta', meta));
+    r.append(ic, t);
+    return r;
+  }
+
+  function buildCard() {
+    const card = el('div', 'dl-card');
+    const head = el('div', 'dl-head');
+    head.appendChild(el('div', 'dl-title', 'حمّل تطبيق عبور'));
+    head.appendChild(el('div', 'dl-sub', 'ثبّته على هاتفك ليفتح بأيقونته وبملء الشاشة'));
+    card.appendChild(head);
+
+    const showAndroid = isAndroid || !isMobile;
+    const showIOS = isIOS || !isMobile;
+
+    if (isAndroid) {
+      const pwa = row('dl-pwa', ICONS.download, deferredPrompt ? 'تثبيت التطبيق الآن' : 'كيف أثبّت التطبيق؟',
+        deferredPrompt ? 'ضغطة واحدة — يتحدّث تلقائياً' : 'خطوات بسيطة من المتصفح');
+      pwa.addEventListener('click', promptInstall);
+      card.appendChild(pwa);
+    }
+    if (showAndroid) {
+      const url = (typeof APP_CONFIG !== 'undefined' && APP_CONFIG.apkUrl) ? APP_CONFIG.apkUrl : '';
+      if (url) {
+        const bits = ['ملف APK'];
+        if (APP_CONFIG.apkVersion) bits.push('الإصدار ' + APP_CONFIG.apkVersion);
+        if (APP_CONFIG.apkSizeMb) bits.push(APP_CONFIG.apkSizeMb + ' م.ب');
+        const a = row('dl-android', ICONS.android, 'تحميل للأندرويد', bits.join(' • '), 'a');
+        a.href = url; a.setAttribute('download', ''); a.rel = 'noopener';
+        card.appendChild(a);
+        card.appendChild(el('div', 'dl-hint', 'بعد التنزيل افتح الملف؛ قد يطلب أندرويد السماح بالتثبيت من هذا المصدر، وهذا طبيعي للتطبيقات خارج المتجر.'));
+      } else {
+        const d = row('dl-android disabled', ICONS.android, 'تحميل للأندرويد', 'ملف APK', 'div');
+        d.appendChild(el('span', 'dl-badge', 'قريباً'));
+        card.appendChild(d);
+      }
+    }
+    if (showIOS) {
+      const ios = row('dl-ios', ICONS.phone, 'للآيفون', 'ثبّت من Safari — خطوات بسيطة');
+      ios.addEventListener('click', () => openSheet('ios'));
+      card.appendChild(ios);
+    }
+    return card;
+  }
+
+  function renderCards() {
+    const hide = standalone() || installed;
+    document.querySelectorAll('[data-download-slot]').forEach((slot) => {
+      slot.textContent = '';
+      if (!hide) slot.appendChild(buildCard());
     });
-  } catch (e) { /* لا يؤثر على عمل التطبيق */ }
-}
-document.addEventListener('DOMContentLoaded', initIosInstallBanner);
+  }
+
+  function refresh() {
+    renderCards();
+    const eligible = ready && isMobile && !standalone() && !installed && !dismissedRecently();
+    if (!eligible) { if (bar) bar.classList.remove('show'); return; }
+    const b = ensureBar();
+    const oneTap = isAndroid && !!deferredPrompt;
+    b.querySelector('[data-ib-sub]').textContent = oneTap ? 'وصول أسرع وبملء الشاشة' : (isIOS ? 'خطوات بسيطة من Safari' : 'خطوات بسيطة من المتصفح');
+    b.querySelector('[data-ib-action]').textContent = oneTap ? 'تثبيت' : 'كيف؟';
+    b.classList.add('show');
+  }
+
+  window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); deferredPrompt = e; refresh(); });
+  window.addEventListener('appinstalled', () => { installed = true; deferredPrompt = null; refresh(); });
+  document.addEventListener('DOMContentLoaded', () => {
+    refresh();
+    setTimeout(() => { ready = true; refresh(); }, SHOW_DELAY_MS);
+  });
+
+  return { refresh, openSheet };
+})();
