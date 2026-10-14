@@ -1,5 +1,5 @@
 /* =========================================================================
-   عبور إكسبريس — إعدادات Sentry (مراقبة الأخطاء)  v5.1.0
+   عبور إكسبريس — إعدادات Sentry (مراقبة الأخطاء)  v5.4.0
    - يُحمَّل قبل سكربت Sentry (Loader) لأنه يعرّف window.sentryOnLoad.
    - لا تسجيل شاشة (Replay) ولا قياس أداء. لا بيانات شخصية: الأرقام والبريد ورموز الدخول
      تُحجب، ويُحذف كل ما بعد ? و # من الروابط (روابط استعادة كلمة السر تحمل رموز دخول).
@@ -32,7 +32,7 @@ window.sentryOnLoad = function () {
 
   var options = {
     dsn: 'https://02ec9669ffc0edabbbdba502f0076f5f@o4512211789086720.ingest.us.sentry.io/4512211800096768',
-    release: 'ubour-express@5.1.0',
+    release: 'ubour-express@5.4.0',
     environment: 'production',
     sendDefaultPii: false,
     maxBreadcrumbs: 20,

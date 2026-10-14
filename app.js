@@ -42,7 +42,7 @@ function showExternalFallback(url) {
 /* =========================================================================
    v5.1 — إرسال الأخطاء إلى Sentry (إن كان محمَّلاً) بدون إرسال أخطاء الأعمال المعتادة
    ========================================================================= */
-const _EXPECTED_ERRORS = /(NOT_ENOUGH_SEATS|TRIP_NOT_ACTIVE|TOO_MANY_OPEN_BOOKINGS|PHONE_REQUIRED|USER_NOT_REGISTERED|TRIP_CANCELLED|SEATS_BELOW_BOOKED|INVALID_SEATS|row-level security|JWT expired|Invalid login credentials|duplicate key)/i;
+const _EXPECTED_ERRORS = /(NOT_ENOUGH_SEATS|TRIP_NOT_ACTIVE|TOO_MANY_OPEN_BOOKINGS|PHONE_REQUIRED|USER_NOT_REGISTERED|TRIP_CANCELLED|SEATS_BELOW_BOOKED|INVALID_SEATS|row-level security|CANCEL_REASON_REQUIRED|CANCEL_TOO_LATE|INVALID_TRANSITION|REVIEW_NOT_ALLOWED|REVIEW_TOO_EARLY|JWT expired|Invalid login credentials|duplicate key)/i;
 const _reportedAt = {};
 
 function reportError(err, where) {
@@ -101,10 +101,10 @@ const APP_CONFIG = {
   name: 'عبور إكسبريس',
   nameShort: 'عبور',
   nameEn: 'Ubour Express',
-  version: '5.1.0',
+  version: '5.4.0',
 
   // ---- تحميل التطبيق (بطاقة "حمّل التطبيق") ----
-  // رابط ملف APK المباشر (مثلاً من GitHub Releases). اتركه '' فيظهر "قريباً".
+  // رابط ملف APK المباشر (مثلاً من GitHub Releases). اتركه '' فلا يظهر زر تحميل الأندرويد.
   apkUrl: '',
   apkVersion: '',      // مثل '1.0'
   apkSizeMb: '',       // مثل '3'
@@ -140,10 +140,14 @@ const APP_CONFIG = {
   ],
 
   // ---- الدخول بالهاتف ----
-  // true  = إن لم تكن Edge Function (phone-auth) منشورة يستعمل التطبيق الدالة القديمة get_email_by_phone.
-  // false = لا رجوع للطريقة القديمة. اجعلها false بعد نشر الدالة واختبارها وتشغيل 03-phase2-lockdown.sql.
-  // (صلاحية المدير تُحدَّد الآن في قاعدة البيانات فقط: جدول managers.)
-  allowLegacyPhoneLookup: true,
+  // false = لا رجوع للدوال القديمة المفتوحة للزائر (get_email_by_phone / check_phone_exists): الدخول والتسجيل
+  // والاستعادة تمرّ عبر الدالة المحمية phone-auth فقط (اختُبرت من البداية للنهاية).
+  // (صلاحية المدير تُحدَّد في قاعدة البيانات فقط: جدول managers.)
+  allowLegacyPhoneLookup: false,
+
+  // ---- تنبيهات الجهاز (Web Push) ----
+  // المفتاح العام فقط (آمن للنشر). المفتاح الخاص محفوظ في Supabase Vault ولا يظهر هنا.
+  vapidPublicKey: 'BJZiWoT_djYWC5BBbqBwhKRK-a8Cq2vKlmbluTO0MANrpCpHtYhIUvr62W1PqO--Q_Zl8ZwwFhQyMnDfve3Z80E',
 
   // ---- أنواع الحسابات غير المدير ----
   accountTypes: [
@@ -176,6 +180,7 @@ const APP_CONFIG = {
     'مرحباً، أنا مهتم برحلة {trip} بتاريخ {date} — هل ما زالت متاحة؟\nعبر تطبيق عبور إكسبريس',
   whatsappCancelToOfficeTemplate:
     'طلب إلغاء حجز ⚠️\nرحلة {trip} بتاريخ {date}\nالسبب: {reason}',
+  whatsappRejectToTravelerTemplate: 'نعتذر، لم نتمكن من تأكيد حجزك لرحلة {trip} بتاريخ {date}\nالسبب: {reason}',
   whatsappCancelToTravelerTemplate:
     'نعتذر، تم إلغاء حجزك لرحلة {trip} بتاريخ {date}\nالسبب: {reason}',
 
@@ -255,6 +260,12 @@ const UbourDB = (() => {
     },
     /** يتحقق من وجود الرقم عبر دالة RPC آمنة (بلا الحاجة لصلاحية قراءة الجدول كاملاً) */
     async checkPhoneExists(phone) {
+      const edge = await UbourDB.edgeAuth({ action: 'exists', phone });
+      if (!edge.unavailable) {
+        if (edge.status === 429) throw new Error('RATE_LIMITED');
+        return !!(edge.data && edge.data.exists);
+      }
+      if (!APP_CONFIG.allowLegacyPhoneLookup) throw new Error('SERVICE_UNAVAILABLE');
       const { data, error } = await supabaseClient.rpc('check_phone_exists', { check_phone: phone });
       if (error) { console.error(error); return false; }
       return !!data;
@@ -362,13 +373,14 @@ const UbourDB = (() => {
     },
 
     /* ============ الرحلات ============ */
-    async createTrip({ officeId, officeName, from, to, vehicleType, price, currency, seatsTotal, date, time }) {
+    async createTrip({ officeId, officeName, from, to, vehicleType, price, currency, seatsTotal, date, time, checkin }) {
       const row = {
         office_id: officeId, office_name: officeName, from_place: from, to_place: to,
         vehicle_type: vehicleType, price: Number(price), currency,
         seats_total: Number(seatsTotal), seats_available: Number(seatsTotal),
         trip_date: date, trip_time: time, status: 'active'
       };
+      if (checkin) row.checkin_time = checkin;
       const { data, error } = await supabaseClient.from('trips').insert(row).select().single();
       _throwIfError(error);
       return data;
@@ -383,12 +395,98 @@ const UbourDB = (() => {
       return data;
     },
     async getActiveTrips() {
-      const { data, error } = await supabaseClient.from('trips')
-        .select('*, office:profiles!trips_office_id_fkey(name, logo_url, phone)')
+      const build = (cols) => supabaseClient.from('trips')
+        .select('*, office:profiles!trips_office_id_fkey(' + cols + ')')
         .eq('status', 'active').gt('seats_available', 0)
         .order('trip_date').order('trip_time');
+      let { data, error } = await build('name, logo_url, phone, address, contact_phone, contact_phone2');
+      if (error) {   // قبل تطبيق الترحيل 04 على القاعدة: نرجع للأعمدة القديمة بدل أن تفرغ القائمة
+        ({ data, error } = await build('name, logo_url, phone, address'));
+      }
       if (error) { console.error(error); return []; }
       return data;
+    },
+    /* ---- v5.3: تقييمات / تنبيهات / جاهزية / إحصائيات ---- */
+    async getOfficeRatings(officeIds) {
+      try {
+        if (Array.isArray(officeIds) && officeIds.length === 0) return {};
+        const { data, error } = await supabaseClient.rpc('get_office_ratings', { p_office_ids: officeIds || null });
+        if (error) { if (!_isMissingDbObject(error)) console.error(error); return {}; }
+        const map = {};
+        (data || []).forEach((r) => { map[r.office_id] = { avg: Number(r.avg_rating), count: Number(r.rating_count) }; });
+        return map;
+      } catch (e) { return {}; }
+    },
+    async getMyReviews() {
+      const { data, error } = await supabaseClient.from('reviews').select('booking_id, rating, comment, created_at');
+      if (error) { if (!_isMissingDbObject(error)) console.error(error); return {}; }
+      const m = {};
+      (data || []).forEach((r) => { m[r.booking_id] = r; });
+      return m;
+    },
+    async createReview({ bookingId, rating, comment }) {
+      const { data: s } = await supabaseClient.auth.getSession();
+      const uid = s && s.session && s.session.user && s.session.user.id;
+      const { data, error } = await supabaseClient.from('reviews')
+        .insert({ booking_id: bookingId, rating, comment: comment || null, traveler_id: uid })
+        .select().single();
+      _throwIfError(error);
+      return data;
+    },
+    async getOfficeReviews(officeId, limit) {
+      const { data, error } = await supabaseClient.from('reviews')
+        .select('rating, comment, traveler_first_name, created_at')
+        .eq('office_id', officeId).order('created_at', { ascending: false }).limit(limit || 5);
+      if (error) { if (!_isMissingDbObject(error)) console.error(error); return []; }
+      return data || [];
+    },
+    async getOfficeStats() {
+      const { data, error } = await supabaseClient.rpc('get_office_stats');
+      if (error) { if (!_isMissingDbObject(error)) console.error(error); return null; }
+      return Array.isArray(data) ? (data[0] || null) : data;
+    },
+    async getNotifications(limit) {
+      const { data, error } = await supabaseClient.from('notifications').select('*')
+        .order('created_at', { ascending: false }).limit(limit || 50);
+      if (error) { if (!_isMissingDbObject(error)) console.error(error); return []; }
+      return data || [];
+    },
+    async markNotificationsRead() {
+      const { error } = await supabaseClient.from('notifications')
+        .update({ read_at: new Date().toISOString() }).is('read_at', null);
+      if (error) { if (!_isMissingDbObject(error)) console.error(error); return false; }
+      return true;
+    },
+    async markBookingReady(id) {
+      const { data, error } = await supabaseClient.from('bookings')
+        .update({ ready_at: new Date().toISOString() }).eq('id', id).select().single();
+      _throwIfError(error);
+      return data;
+    },
+    /* ---- v5.4: Web Push + إشراف التقييمات ---- */
+    async savePushSubscription(sub) {
+      const j = sub && (typeof sub.toJSON === 'function' ? sub.toJSON() : sub);
+      const keys = (j && j.keys) || {};
+      if (!j || !j.endpoint || !keys.p256dh || !keys.auth) return false;
+      const { error } = await supabaseClient.rpc('save_push_subscription', {
+        p_endpoint: j.endpoint, p_p256dh: keys.p256dh, p_auth: keys.auth, p_ua: (navigator.userAgent || '').slice(0, 300)
+      });
+      if (error) { if (!_isMissingDbObject(error)) console.error(error); return false; }
+      return true;
+    },
+    async removePushSubscription(endpoint) {
+      try { await supabaseClient.rpc('remove_push_subscription', { p_endpoint: endpoint }); } catch (e) { /* تجاهل */ }
+    },
+    async getAllReviews(limit) {
+      const { data, error } = await supabaseClient.from('reviews')
+        .select('id, office_id, rating, comment, traveler_first_name, created_at')
+        .order('created_at', { ascending: false }).limit(limit || 100);
+      if (error) { if (!_isMissingDbObject(error)) console.error(error); return []; }
+      return data || [];
+    },
+    async deleteReview(id) {
+      const { error } = await supabaseClient.from('reviews').delete().eq('id', id);
+      _throwIfError(error);
     },
     async getTripsByOffice(officeId) {
       const { data, error } = await supabaseClient.from('trips').select('*').eq('office_id', officeId);
@@ -549,7 +647,9 @@ const UbourAuth = (() => {
     const phoneResult = detectPhone(phoneRaw);
     if (!phoneResult.valid) return { ok: false, error: 'INVALID_PHONE' };
 
-    const exists = await UbourDB.checkPhoneExists(phoneResult.e164);
+    let exists;
+    try { exists = await UbourDB.checkPhoneExists(phoneResult.e164); }
+    catch (e) { return { ok: false, error: (e && e.message === 'RATE_LIMITED') ? 'RATE_LIMITED' : 'SERVICE_UNAVAILABLE' }; }
     if (exists) return { ok: false, error: 'DUPLICATE_PHONE' };
 
     const { data, error } = await supabaseClient.auth.signUp({
@@ -901,7 +1001,14 @@ function initRegisterPhoneScreen() {
 
     btn.classList.add('loading');
     btn.disabled = true;
-    const exists = await UbourDB.checkPhoneExists(result.e164);
+    let exists;
+    try { exists = await UbourDB.checkPhoneExists(result.e164); }
+    catch (e) {
+      btn.classList.remove('loading'); btn.disabled = false;
+      errorEl.textContent = (e && e.message === 'RATE_LIMITED') ? 'محاولات كثيرة، انتظر بضع دقائق ثم حاول مجدداً' : 'الخدمة غير متاحة مؤقتاً، حاول لاحقاً';
+      errorEl.classList.add('show');
+      return;
+    }
     btn.classList.remove('loading');
     btn.disabled = false;
 
@@ -984,6 +1091,10 @@ function initRegisterAccountScreen() {
       } else if (result.error === 'DUPLICATE_EMAIL') {
         errorEl.textContent = 'هذا البريد الإلكتروني مسجّل بحساب من قبل';
         errorEl.classList.add('show');
+      } else if (result.error === 'RATE_LIMITED') {
+        showToast('محاولات كثيرة، انتظر بضع دقائق ثم حاول مجدداً', 'error', 5000);
+      } else if (result.error === 'SERVICE_UNAVAILABLE') {
+        showToast('الخدمة غير متاحة مؤقتاً، حاول لاحقاً', 'error', 5000);
       } else {
         showToast('حدث خطأ غير متوقع، حاول مرة أخرى', 'error');
       }
@@ -1087,15 +1198,108 @@ function currencyLabel(code) {
   return c ? c.label : code;
 }
 function bookingStatusLabel(s) {
-  return { pending: 'قيد الانتظار', completed: 'مكتملة', cancel_requested: 'طلب إلغاء' }[s] || s;
+  return { pending: 'قيد الانتظار', completed: 'مؤكد', cancel_requested: 'ملغي' }[s] || s;
 }
 function whatsappLink(phone, message) {
   const digits = normalizeDigits(phone || '').replace(/[^\d]/g, '');
   return `https://wa.me/${digits}?text=${encodeURIComponent(message)}`;
 }
+
+/* =========================================================================
+   v5.2 — أوقات وتواريخ دقيقة، بيانات المكتب، وحالات الحجز
+   ========================================================================= */
+const _AR_DAYS = ['الأحد', 'الاثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'];
+const _IC_PIN = '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s7-6.2 7-12a7 7 0 0 0-14 0c0 5.8 7 12 7 12z"/><circle cx="12" cy="10" r="2.5"/></svg>';
+const _IC_PHONE = '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1 1 .4 1.9.7 2.8a2 2 0 0 1-.5 2.1L8.1 9.9a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.8.7a2 2 0 0 1 1.7 2z"/></svg>';
+
+/** '20:30:00' → '8:30 مساءً' (12 ساعة، صباحاً/مساءً صريحة) */
+function fmtTime12(t) {
+  if (!t) return '';
+  const m = /^(\d{1,2}):(\d{2})/.exec(String(t));
+  if (!m) return String(t);
+  let h = parseInt(m[1], 10);
+  const suffix = h >= 12 ? 'مساءً' : 'صباحاً';
+  h = h % 12; if (h === 0) h = 12;
+  return h + ':' + m[2] + ' ' + suffix;
+}
+/** '2026-10-10' → 'الجمعة 2026-10-10' */
+function fmtDateAr(d) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(d || ''));
+  if (!m) return String(d || '');
+  const wd = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3])).getUTCDay();
+  return _AR_DAYS[wd] + ' ' + m[1] + '-' + m[2] + '-' + m[3];
+}
+/** موعد التحرك بالميلي ثانية (توقيت اليمن/السعودية UTC+3) */
+function tripDepartureMs(trip) {
+  let t = String((trip && trip.trip_time) || '').slice(0, 8);
+  if (t.length === 5) t += ':00';
+  return new Date(String((trip && trip.trip_date) || '').slice(0, 10) + 'T' + t + '+03:00').getTime();
+}
+function hoursUntilTrip(trip) { return (tripDepartureMs(trip) - Date.now()) / 3600000; }
+/** الفرق بالساعات بين الحضور والتحرك (يدعم عبور منتصف الليل) */
+function checkinGapHours(checkin, depart) {
+  const toMin = (s) => { const m = /^(\d{1,2}):(\d{2})/.exec(String(s || '')); return m ? (+m[1]) * 60 + (+m[2]) : null; };
+  const c = toMin(checkin), d = toMin(depart);
+  if (c == null || d == null) return null;
+  return ((d - c + 1440) % 1440) / 60;
+}
+function officeContactNumbers(o) {
+  if (!o) return [];
+  const list = [o.contact_phone, o.contact_phone2].filter(Boolean);
+  return list.length ? list : (o.phone ? [o.phone] : []);
+}
+/** رقم واتساب المكتب: رقم التواصل الأول إن وُجد، وإلا رقم الحساب */
+function officeWaPhone(o) { return (o && (o.contact_phone || o.phone)) || ''; }
+
+function officeAvatarHtml(o, size) {
+  const cls = 'office-avatar' + (size === 'lg' ? ' office-avatar-lg' : '');
+  if (o && o.logo_url) return '<img class="' + cls + '" src="' + esc(o.logo_url) + '" alt="">';
+  const ch = String((o && o.name) || '؟').trim().charAt(0) || '؟';
+  return '<span class="' + cls + ' office-avatar-ph">' + esc(ch) + '</span>';
+}
+function officeInfoHtml(o) {
+  if (!o) return '';
+  const nums = officeContactNumbers(o);
+  const loc = o.address ? '<div class="office-line">' + _IC_PIN + '<span>' + esc(o.address) + '</span></div>' : '';
+  const ph = nums.length ? '<div class="office-line">' + _IC_PHONE + '<span>' + nums.map(p => '<bdi dir="ltr">' + esc(p) + '</bdi>').join(' • ') + '</span></div>' : '';
+  return loc + ph;
+}
+function tripTimesHtml(t) {
+  const dep = '<span class="time-chip time-dep"><b>التحرك</b>' + esc(fmtDateAr(t.trip_date)) + ' — <strong>' + esc(fmtTime12(t.trip_time)) + '</strong></span>';
+  const ci = t.checkin_time ? '<span class="time-chip time-checkin"><b>الحضور</b><strong>' + esc(fmtTime12(t.checkin_time)) + '</strong></span>' : '';
+  return '<div class="trip-times">' + ci + dep + '</div>';
+}
+/** نص وصنف شارة الحجز حسب من يشاهدها ('traveler' | 'office') */
+function bookingBadge(b, viewer) {
+  if (b.status === 'pending') return { text: 'قيد الانتظار', cls: 'status-pending' };
+  if (b.status === 'completed') return { text: 'مؤكد ✅', cls: 'status-completed' };
+  const byOffice = b.cancelled_by === 'office';
+  const rejected = byOffice && b.confirmed_at === null;           // لم يُؤكَّد أصلاً
+  let text;
+  if (byOffice) {
+    if (viewer === 'office') text = rejected ? 'رفضتَه (لم يُؤكَّد)' : 'ألغيتَه';
+    else text = rejected ? 'لم يُؤكَّد (رُفض)' : 'ألغاه المكتب';
+  } else {
+    text = viewer === 'office' ? 'ألغاه المسافر' : 'ألغيتَه';
+  }
+  return { text, cls: 'status-cancel_requested' };
+}
+function bookingErrorMessage(e) {
+  const m = String((e && e.message) || '');
+  if (m.includes('CANCEL_REASON_REQUIRED')) return 'اكتب سبباً واضحاً (3 أحرف على الأقل)';
+  if (m.includes('CANCEL_TOO_LATE')) return 'لا يمكن إلغاء الحجز قبل أقل من 12 ساعة من موعد التحرك — تواصل مع المكتب';
+  if (m.includes('INVALID_TRANSITION')) return 'لا يمكن تنفيذ هذا الإجراء على الحجز بحالته الحالية';
+  if (m.includes('FORBIDDEN')) return 'غير مصرّح لك بتعديل هذا الحجز';
+  if (m.includes('REVIEW_NOT_ALLOWED')) return 'يمكن تقييم الحجوزات المؤكَّدة فقط';
+  if (m.includes('REVIEW_TOO_EARLY')) return 'يمكن التقييم بعد موعد الرحلة';
+  if (/duplicate key|unique/i.test(m)) return 'سبق أن قيّمتَ هذه الرحلة';
+  return 'تعذّر تنفيذ العملية، حاول مجدداً';
+}
 async function doLogout() {
+  try { await NotifUI.removePush(); } catch (e) { /* تجاهل */ }
   await UbourAuth.logout();
   _currentProfileCache = null;
+  NotifUI.stop();
   screenHistory.length = 0;
   screenHistory.push('screen-login');
   showScreen('screen-login', { replace: true });
@@ -1223,6 +1427,8 @@ async function renderTravelerScreen() {
   const profile = await UbourDB.getCurrentProfile();
   if (!profile) return;
   _currentProfileCache = profile;
+  prefetchSupportPhone();
+  NotifUI.start(profile.id);
   document.getElementById('traveler-user-phone').textContent = profile.phone;
   document.getElementById('traveler-profile-phone').textContent = profile.phone;
 
@@ -1236,32 +1442,80 @@ async function renderTravelerScreen() {
   document.getElementById('traveler-view-search').classList.remove('hidden');
 }
 
+let _tripsCache = [], _ratingsMap = {}, _tripText = '';
+const _tripFilters = { time: '', dest: '', minRating: 0, sort: 'soonest' };
+
 async function renderTravelerTrips(filterText) {
+  if (filterText != null) _tripText = filterText;
+  _tripsCache = await UbourDB.getActiveTrips();
+  const ids = Array.from(new Set(_tripsCache.map(t => t.office_id)));
+  _ratingsMap = ids.length ? await UbourDB.getOfficeRatings(ids) : {};
+  drawTravelerTrips();
+}
+
+function _tripHour(t) { return parseInt(String(t.trip_time || '').slice(0, 2), 10) || 0; }
+function _filtersActive() { return !!(_tripFilters.time || _tripFilters.dest || _tripFilters.minRating > 0 || _tripFilters.sort !== 'soonest'); }
+function resetTripFilters() { _tripFilters.time = ''; _tripFilters.dest = ''; _tripFilters.minRating = 0; _tripFilters.sort = 'soonest'; }
+function syncFilterUI() {
+  document.querySelectorAll('[data-filter-time]').forEach((b) => b.classList.toggle('active', b.dataset.filterTime === _tripFilters.time));
+  const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = String(v); };
+  set('filter-rating', _tripFilters.minRating); set('filter-sort', _tripFilters.sort);
+}
+function updateDestinationOptions() {
+  const sel = document.getElementById('filter-destination');
+  if (!sel) return;
+  const dests = Array.from(new Set(_tripsCache.map(t => t.to_place))).sort((a, b) => a.localeCompare(b, 'ar'));
+  if (_tripFilters.dest && !dests.includes(_tripFilters.dest)) _tripFilters.dest = '';
+  sel.innerHTML = '<option value="">كل الوجهات</option>' + dests.map(d => '<option value="' + esc(d) + '">' + esc(d) + '</option>').join('');
+  sel.value = _tripFilters.dest;
+}
+
+function drawTravelerTrips() {
   const list = document.getElementById('traveler-trips-list');
-  let trips = await UbourDB.getActiveTrips();
-  if (filterText && filterText.trim()) {
-    const f = filterText.trim();
-    trips = trips.filter(t => t.from_place.includes(f) || t.to_place.includes(f));
+  updateDestinationOptions();
+  syncFilterUI();
+  let trips = _tripsCache.slice();
+  const f = (_tripText || '').trim();
+  if (f) trips = trips.filter(t => t.from_place.includes(f) || t.to_place.includes(f));
+  if (_tripFilters.time === 'am') trips = trips.filter(t => _tripHour(t) < 12);
+  if (_tripFilters.time === 'pm') trips = trips.filter(t => _tripHour(t) >= 12);
+  if (_tripFilters.dest) trips = trips.filter(t => t.to_place === _tripFilters.dest);
+  if (_tripFilters.minRating > 0) trips = trips.filter(t => { const r = _ratingsMap[t.office_id]; return !!r && r.avg >= _tripFilters.minRating; });
+  const dep = (t) => tripDepartureMs(t);
+  if (_tripFilters.sort === 'rating') {
+    trips.sort((a, b) => { const ra = _ratingsMap[a.office_id], rb = _ratingsMap[b.office_id]; return ((rb ? rb.avg : -1) - (ra ? ra.avg : -1)) || (dep(a) - dep(b)); });
+  } else {
+    trips.sort((a, b) => dep(a) - dep(b));
   }
+
+  const summary = document.getElementById('filter-summary');
+  if (summary) summary.textContent = _tripsCache.length ? ('النتائج: ' + trips.length + ' من ' + _tripsCache.length + ' رحلة') : '';
+  const clearBtn = document.getElementById('btn-clear-filters');
+  if (clearBtn) clearBtn.style.display = _filtersActive() ? '' : 'none';
+
   if (!trips.length) {
-    list.innerHTML = `<div class="empty-state">${ICONS.route}<div class="mt-2">لا توجد رحلات متاحة حالياً</div></div>`;
+    const filtered = _tripsCache.length > 0;
+    list.innerHTML = `<div class="empty-state">${ICONS.route}<div class="mt-2">${filtered ? 'لا توجد رحلات مطابقة — جرّب تغيير التصفية' : 'لا توجد رحلات متاحة حالياً'}</div></div>`;
     return;
   }
 
   list.innerHTML = trips.map(t => {
-    const office = t.office;
-    const avatar = office && office.logo_url
-      ? `<img src="${esc(office.logo_url)}" alt="" style="width:22px;height:22px;border-radius:50%;object-fit:cover;vertical-align:middle;margin-inline-end:6px;">`
-      : '';
+    const office = t.office || {};
+    const officeName = office.name || t.office_name || '';
     return `
-    <div class="list-card">
-      <div class="lc-top">
-        <span class="lc-sub">${avatar}${esc((office && office.name) || t.office_name)}</span>
+    <div class="list-card trip-card">
+      <div class="office-head">
+        ${officeAvatarHtml(office, 'lg')}
+        <div class="office-meta">
+          <div class="office-name">${esc(officeName)}</div>
+          ${ratingBadgeHtml(_ratingsMap[t.office_id])}
+          ${officeInfoHtml(office)}
+        </div>
         <span class="lc-price">${esc(t.price)} ${currencyLabel(t.currency)}</span>
       </div>
       <div class="lc-route">${ICONS.route}<span>${esc(t.from_place)}</span>${ICONS.chevron}<span>${esc(t.to_place)}</span></div>
+      ${tripTimesHtml(t)}
       <div class="lc-meta">
-        <span>${ICONS.clock}${esc(t.trip_date)} — ${esc(t.trip_time)}</span>
         <span>${ICONS.users} ${esc(t.seats_available)} مقعد متاح</span>
         ${t.vehicle_type ? `<span>${ICONS.bus} ${esc(t.vehicle_type)}</span>` : ''}
       </div>
@@ -1278,15 +1532,33 @@ async function renderTravelerTrips(filterText) {
   list.querySelectorAll('[data-contact-trip]').forEach(btn => {
     btn.addEventListener('click', () => {
       const trip = trips.find(x => x.id === btn.dataset.contactTrip);
-      if (!trip || !trip.office) return;
+      const phone = trip && officeWaPhone(trip.office);
+      if (!phone) { showToast('رقم تواصل المكتب غير متاح', 'error'); return; }
       const msg = APP_CONFIG.whatsappContactTemplate
         .replace('{trip}', `${trip.from_place} ← ${trip.to_place}`)
-        .replace('{date}', trip.trip_date);
-      openExternal(whatsappLink(trip.office.phone, msg));
+        .replace('{date}', `${fmtDateAr(trip.trip_date)} الساعة ${fmtTime12(trip.trip_time)}`);
+      openExternal(whatsappLink(phone, msg));
     });
   });
 }
 
+function initTripFilters() {
+  document.querySelectorAll('[data-filter-time]').forEach((btn) => btn.addEventListener('click', () => {
+    _tripFilters.time = btn.dataset.filterTime || '';
+    drawTravelerTrips();
+  }));
+  const bind = (id, key, conv) => {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener('change', () => { _tripFilters[key] = conv(el.value); drawTravelerTrips(); });
+  };
+  bind('filter-destination', 'dest', (v) => v);
+  bind('filter-rating', 'minRating', (v) => Number(v) || 0);
+  bind('filter-sort', 'sort', (v) => v || 'soonest');
+  const clear = document.getElementById('btn-clear-filters');
+  if (clear) clear.addEventListener('click', () => { resetTripFilters(); drawTravelerTrips(); });
+}
+
+const _tbCtx = {};   // سياق حجوزات المسافر المعروضة (للأزرار)
 async function renderTravelerBookings() {
   const profile = _currentProfileCache || await UbourDB.getCurrentProfile();
   const list = document.getElementById('traveler-bookings-list');
@@ -1296,27 +1568,83 @@ async function renderTravelerBookings() {
     list.innerHTML = `<div class="empty-state">${ICONS.box}<div class="mt-2">لا توجد حجوزات بعد</div></div>`;
     return;
   }
-  const rows = await Promise.all(bookings.slice().reverse().map(async (b) => {
+  const items = (await Promise.all(bookings.slice().reverse().map(async (b) => {
     const trip = await UbourDB.getTripById(b.trip_id);
-    if (!trip) return '';
-    const tripOffice = await UbourDB.getProfileById(trip.office_id);
-    const canCancel = b.status === 'pending';
+    if (!trip) return null;
+    const office = await UbourDB.getProfileById(trip.office_id);
+    return { b, trip, office };
+  }))).filter(Boolean);
+  const ratings = await UbourDB.getOfficeRatings(Array.from(new Set(items.map(x => x.trip.office_id))));
+  const myReviews = await UbourDB.getMyReviews();
+
+  list.innerHTML = items.map(({ b, trip, office }) => {
+    _tbCtx[b.id] = { b, trip, office };
+    const live = b.status === 'pending' || b.status === 'completed';
+    const hrs = hoursUntilTrip(trip);
+    const canCancel = live && hrs >= 12;
+    const tooLate = live && hrs > 0 && hrs < 12;
+    const soon = b.status === 'completed' && hrs > 0 && hrs <= 24;
+    const departed = b.status === 'completed' && hrs <= 0;
+    const badge = bookingBadge(b, 'traveler');
+    const review = myReviews[b.id];
+    const ci = trip.checkin_time ? ` — الحضور ${esc(fmtTime12(trip.checkin_time))}` : '';
     return `
       <div class="list-card">
-        <div class="lc-top">
-          <span class="lc-sub">${esc((tripOffice && tripOffice.name) || trip.office_name)}</span>
-          <span class="badge-pill status-${esc(b.status)}">${bookingStatusLabel(b.status)}</span>
+        <div class="office-head">
+          ${officeAvatarHtml(office || { name: trip.office_name }, 'lg')}
+          <div class="office-meta">
+            <div class="office-name">${esc((office && office.name) || trip.office_name)}</div>
+            ${ratingBadgeHtml(ratings[trip.office_id])}
+            ${officeInfoHtml(office)}
+          </div>
+          <span class="badge-pill ${badge.cls}">${esc(badge.text)}</span>
         </div>
         <div class="lc-route">${ICONS.route}<span>${esc(trip.from_place)}</span>${ICONS.chevron}<span>${esc(trip.to_place)}</span></div>
-        <div class="lc-meta"><span>${ICONS.clock}${esc(trip.trip_date)} — ${esc(trip.trip_time)}</span><span>${esc(b.seats)} مقعد</span></div>
-        ${b.status === 'cancel_requested' && b.cancel_reason ? `<div class="lc-sub" style="color:var(--error); margin-top:6px;">سبب الإلغاء: ${esc(b.cancel_reason)}</div>` : ''}
-        ${canCancel ? `<div class="lc-actions"><button class="btn btn-ghost" data-cancel-booking="${esc(b.id)}" style="padding:10px; font-size:13px; color:var(--error); border-color:var(--error);">إلغاء الحجز</button></div>` : ''}
+        ${tripTimesHtml(trip)}
+        <div class="lc-meta"><span>${esc(b.seats)} مقعد</span></div>
+        ${b.status === 'cancel_requested' ? cancelReasonBoxHtml(b) : ''}
+        ${soon && !b.ready_at ? `<div class="remind-box"><span>⏰ رحلتك بعد ${esc(hoursText(hrs))}${ci}. هل أنت مستعد؟</span><button type="button" class="act-btn act-confirm" data-ready-booking="${esc(b.id)}">أنا جاهز ✅</button></div>` : ''}
+        ${soon && b.ready_at ? `<div class="remind-box ok">✅ أكّدتَ جاهزيتك للرحلة${ci}</div>` : ''}
+        ${tooLate ? `<div class="lc-sub" style="margin-top:6px;">لا يمكن إلغاء الحجز قبل أقل من 12 ساعة من موعد التحرك — تواصل مع المكتب عبر واتساب.</div>` : ''}
+        ${departed && review ? `<div class="review-done"><b>تقييمك:</b> <span class="rb-star">${starsText(review.rating)}</span>${review.comment ? `<div class="rv-comment">${esc(review.comment)}</div>` : ''}</div>` : ''}
+        <div class="lc-actions lc-actions-wrap">
+          ${live ? `<button class="whatsapp-btn" data-contact-office="${esc(b.id)}">${ICONS.whatsapp}تواصل مع المكتب</button>` : ''}
+          ${departed && !review ? `<button type="button" class="act-btn act-confirm" data-review-booking="${esc(b.id)}">⭐ قيّم الرحلة</button>` : ''}
+          ${canCancel ? `<button class="btn btn-ghost" data-cancel-booking="${esc(b.id)}" style="padding:10px; font-size:13px; color:var(--error); border-color:var(--error); flex:1;">إلغاء الحجز</button>` : ''}
+        </div>
       </div>`;
-  }));
-  list.innerHTML = rows.join('');
+  }).join('');
 
   list.querySelectorAll('[data-cancel-booking]').forEach(btn => {
-    btn.addEventListener('click', () => openCancelModal(btn.dataset.cancelBooking, 'traveler'));
+    btn.addEventListener('click', () => {
+      const ctx = _tbCtx[btn.dataset.cancelBooking];
+      if (ctx && hoursUntilTrip(ctx.trip) < 12) { showToast(bookingErrorMessage({ message: 'CANCEL_TOO_LATE' }), 'error', 5000); return; }
+      openCancelModal(btn.dataset.cancelBooking, 'traveler');
+    });
+  });
+  list.querySelectorAll('[data-contact-office]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const ctx = _tbCtx[btn.dataset.contactOffice];
+      const phone = ctx && officeWaPhone(ctx.office);
+      if (!phone) { showToast('رقم تواصل المكتب غير متاح', 'error'); return; }
+      const msg = `مرحباً، أنا ${ctx.b.traveler_name} بخصوص حجزي لرحلة ${ctx.trip.from_place} ← ${ctx.trip.to_place} يوم ${fmtDateAr(ctx.trip.trip_date)} الساعة ${fmtTime12(ctx.trip.trip_time)}.`;
+      openExternal(whatsappLink(phone, msg));
+    });
+  });
+  list.querySelectorAll('[data-ready-booking]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      if (btn.disabled) return;
+      btn.disabled = true;
+      try { await UbourDB.markBookingReady(btn.dataset.readyBooking); showToast('تم إبلاغ المكتب بجاهزيتك', 'success'); }
+      catch (e) { showToast(bookingErrorMessage(e), 'error'); console.error(e); }
+      await renderTravelerBookings();
+    });
+  });
+  list.querySelectorAll('[data-review-booking]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const ctx = _tbCtx[btn.dataset.reviewBooking];
+      openReviewModal(btn.dataset.reviewBooking, (ctx && ctx.office && ctx.office.name) || (ctx && ctx.trip.office_name) || '');
+    });
   });
 }
 
@@ -1324,42 +1652,66 @@ async function openBookingModal(tripId) {
   const trip = await UbourDB.getTripById(tripId);
   if (!trip) return;
   _bookingTripId = tripId;
-  document.getElementById('book-trip-summary').textContent =
-    `${trip.from_place} ← ${trip.to_place} | ${esc(trip.trip_date)} ${esc(trip.trip_time)} | ${esc(trip.price)} ${currencyLabel(trip.currency)} للمقعد الواحد`;
+  const office = await UbourDB.getProfileById(trip.office_id);
+  const head = document.getElementById('book-trip-office');
+  if (head) {
+    const rt = (await UbourDB.getOfficeRatings([trip.office_id]))[trip.office_id];
+    head.innerHTML = `<div class="office-head">${officeAvatarHtml(office || { name: trip.office_name }, 'lg')}<div class="office-meta"><div class="office-name">${esc((office && office.name) || trip.office_name)}</div>${ratingBadgeHtml(rt)}${officeInfoHtml(office)}</div></div>`;
+  }
+  document.getElementById('book-trip-summary').innerHTML =
+    `<div class="lc-route" style="margin-bottom:8px;">${esc(trip.from_place)} ← ${esc(trip.to_place)}</div>` +
+    tripTimesHtml(trip) +
+    `<div style="margin-top:8px;">${esc(trip.price)} ${currencyLabel(trip.currency)} للمقعد الواحد</div>`;
   const seatsInput = document.getElementById('input-booker-seats');
   seatsInput.value = 1;
   seatsInput.max = trip.seats_available;
   document.getElementById('modal-book-trip').classList.add('active');
 }
 
-/* ---------------- نافذة إلغاء الحجز/الرحلة (مشتركة بين المسافر والمكتب) ---------------- */
-let _cancelContext = null; // { id, type: 'booking' | 'trip', initiator: 'traveler' | 'office' }
-function openCancelModal(id, initiator, type) {
-  _cancelContext = { id, initiator, type: type || 'booking' };
-  document.getElementById('input-cancel-reason').value = '';
-  document.getElementById('cancel-modal-title').textContent = _cancelContext.type === 'trip' ? 'إلغاء الرحلة' : 'إلغاء الحجز';
+/* ---------------- نافذة إلغاء/رفض الحجز أو إلغاء الرحلة (مشتركة) ---------------- */
+let _cancelContext = null; // { id, initiator: 'traveler'|'office', type: 'booking'|'trip', mode }
+const CANCEL_TEXTS = {
+  traveler: { title: 'إلغاء الحجز', label: 'سبب الإلغاء (إلزامي)', ph: 'اكتب سبب إلغاء الحجز...', btn: 'تأكيد الإلغاء' },
+  reject: { title: 'عدم تأكيد الحجز', label: 'سبب عدم التأكيد (سيصل للمسافر)', ph: 'مثال: لا تتوفر مقاعد مناسبة في هذا الموعد', btn: 'تأكيد عدم القبول وإبلاغ المسافر' },
+  'cancel-confirmed': { title: 'إلغاء حجز مؤكَّد', label: 'سبب الإلغاء (سيصل للمسافر)', ph: 'اكتب سبب الإلغاء...', btn: 'تأكيد الإلغاء وإبلاغ المسافر' },
+  trip: { title: 'إلغاء الرحلة', label: 'سبب إلغاء الرحلة', ph: 'اكتب سبب الإلغاء هنا...', btn: 'تأكيد الإلغاء وإرسال السبب' }
+};
+function openCancelModal(id, initiator, type, mode) {
+  const kind = (type || 'booking') === 'trip' ? 'trip' : (mode || (initiator === 'office' ? 'cancel-confirmed' : 'traveler'));
+  _cancelContext = { id, initiator, type: type || 'booking', mode: kind };
+  const tx = CANCEL_TEXTS[kind] || CANCEL_TEXTS.traveler;
+  const input = document.getElementById('input-cancel-reason');
+  input.value = '';
+  input.placeholder = tx.ph;
+  const label = document.querySelector('label[for="input-cancel-reason"]');
+  if (label) label.textContent = tx.label;
+  const btnLabel = document.querySelector('#btn-submit-cancel .btn-label');
+  if (btnLabel) btnLabel.textContent = tx.btn;
+  document.getElementById('cancel-modal-title').textContent = tx.title;
   document.getElementById('modal-cancel-booking').classList.add('active');
 }
 function initCancelModal() {
   document.getElementById('btn-submit-cancel').addEventListener('click', async () => {
     if (!_cancelContext) return;
     const reason = document.getElementById('input-cancel-reason').value.trim();
-    if (!reason) { showToast('يرجى كتابة سبب الإلغاء', 'error'); return; }
+    if (reason.length < 3) { showToast('اكتب سبباً واضحاً (3 أحرف على الأقل)', 'error'); return; }
 
-    const { id, initiator, type } = _cancelContext;
+    const { id, initiator, type, mode } = _cancelContext;
 
     if (type === 'trip') {
       // إلغاء رحلة كاملة: تُلغى كل الحجوزات المرتبطة بها تلقائياً بنفس السبب
       const allBookings = await UbourDB.getAllBookings();
       const bookingsBefore = allBookings.filter(b => b.trip_id === id && b.status !== 'cancel_requested');
-      const trip = await UbourDB.cancelTrip(id, reason);
+      let trip;
+      try { trip = await UbourDB.cancelTrip(id, reason); }
+      catch (e) { showToast(bookingErrorMessage(e), 'error'); console.error(e); return; }
       if (!trip) return;
 
       // إخطار أول مسافر حجز عبر واتساب (المتصفحات تمنع فتح أكثر من نافذة منبثقة تلقائياً لكل نقرة)
       if (bookingsBefore.length > 0) {
         const first = bookingsBefore[0];
         const msg = APP_CONFIG.whatsappCancelToTravelerTemplate
-          .replace('{trip}', `${trip.from_place} ← ${trip.to_place}`).replace('{date}', trip.trip_date).replace('{reason}', reason);
+          .replace('{trip}', `${trip.from_place} ← ${trip.to_place}`).replace('{date}', fmtDateAr(trip.trip_date)).replace('{reason}', reason);
         openExternal(whatsappLink(first.traveler_phone, msg));
       }
       const extra = bookingsBefore.length > 1 ? ` (يرجى إخطار باقي ${bookingsBefore.length - 1} مسافراً يدوياً عبر واتساب)` : '';
@@ -1368,28 +1720,93 @@ function initCancelModal() {
       const profile = await UbourDB.getCurrentProfile();
       if (profile) { await renderOfficeTrips(profile); await renderOfficeRequests(profile); }
     } else {
-      const booking = await UbourDB.cancelBooking(id, reason, initiator);
+      let booking;
+      try { booking = await UbourDB.cancelBooking(id, reason, initiator); }
+      catch (e) { showToast(bookingErrorMessage(e), 'error', 5000); console.error(e); return; }
       if (!booking) return;
       const trip = await UbourDB.getTripById(booking.trip_id);
       const office = trip && await UbourDB.getProfileById(trip.office_id);
+      const tripText = trip ? `${trip.from_place} ← ${trip.to_place}` : '';
+      const dateText = trip ? `${fmtDateAr(trip.trip_date)} الساعة ${fmtTime12(trip.trip_time)}` : '';
 
-      if (initiator === 'traveler' && office) {
-        const msg = APP_CONFIG.whatsappCancelToOfficeTemplate
-          .replace('{trip}', `${trip.from_place} ← ${trip.to_place}`).replace('{date}', trip.trip_date).replace('{reason}', reason);
-        openExternal(whatsappLink(office.phone, msg));
+      if (initiator === 'traveler') {
+        const phone = officeWaPhone(office);
+        if (phone) {
+          const msg = APP_CONFIG.whatsappCancelToOfficeTemplate
+            .replace('{trip}', tripText).replace('{date}', dateText).replace('{reason}', reason);
+          openExternal(whatsappLink(phone, `${booking.traveler_name ? 'الاسم: ' + booking.traveler_name + '\n' : ''}${msg}`));
+        }
         await renderTravelerBookings();
+        await renderTravelerTrips();
+        showToast('تم إلغاء حجزك وأُعيد المقعد للمتاح', 'info');
       } else if (initiator === 'office') {
-        const msg = APP_CONFIG.whatsappCancelToTravelerTemplate
-          .replace('{trip}', `${trip.from_place} ← ${trip.to_place}`).replace('{date}', trip.trip_date).replace('{reason}', reason);
+        const tpl = mode === 'reject' ? APP_CONFIG.whatsappRejectToTravelerTemplate : APP_CONFIG.whatsappCancelToTravelerTemplate;
+        const officeName = (_currentProfileCache && _currentProfileCache.name) || (office && office.name) || '';
+        const msg = `مرحباً ${booking.traveler_name || ''}، معك ${officeName}.\n` +
+          tpl.replace('{trip}', tripText).replace('{date}', dateText).replace('{reason}', reason);
         openExternal(whatsappLink(booking.traveler_phone, msg));
         const profile = await UbourDB.getCurrentProfile();
-        if (profile) await renderOfficeRequests(profile);
+        if (profile) { await renderOfficeRequests(profile); await renderOfficeTrips(profile); }
+        showToast(mode === 'reject' ? 'تم رفض الحجز وإبلاغ المسافر، والمقعد عاد متاحاً' : 'تم إلغاء الحجز وأُعيد المقعد للمتاح', 'info', 5000);
       }
-      showToast('تم إرسال طلب الإلغاء', 'info');
     }
 
     closeModals();
     _cancelContext = null;
+  });
+}
+
+
+
+/* =========================================================================
+   v5.3 — التقييم، التنبيهات، التصفية، الإحصائيات (مساعدات)
+   ========================================================================= */
+function _isMissingDbObject(error) {
+  const m = String((error && error.message) || '');
+  return !!error && (error.code === '42883' || error.code === '42P01' || error.code === 'PGRST202' || error.code === 'PGRST205' || /does not exist|schema cache|Could not find/i.test(m));
+}
+function starsText(n) {
+  const full = Math.max(0, Math.min(5, Math.round(Number(n) || 0)));
+  return '★'.repeat(full) + '☆'.repeat(5 - full);
+}
+function ratingBadgeHtml(rt) {
+  if (!rt || !rt.count) return '<span class="rating-badge rb-new">جديد — بلا تقييم بعد</span>';
+  return '<span class="rating-badge"><span class="rb-star">★</span><b>' + esc(rt.avg.toFixed(1)) + '</b><small>(' + esc(rt.count) + ')</small></span>';
+}
+/** صندوق سبب الإلغاء/الرفض الواضح للمسافر في «حجوزاتي» */
+function cancelReasonBoxHtml(b) {
+  const reason = b.cancel_reason ? esc(b.cancel_reason) : 'لم يُذكر سبب';
+  if (b.cancelled_by === 'office') {
+    const rejected = b.confirmed_at === null;      // لم يُؤكَّد أصلاً = رفض
+    const title = rejected ? '❌ لم يؤكّد المكتب حجزك (تم الرفض)' : '⚠️ ألغى المكتب حجزك المؤكَّد';
+    return '<div class="reason-box reject"><div class="rb-title">' + title + '</div><div class="rb-text"><b>السبب:</b> ' + reason + '</div></div>';
+  }
+  return '<div class="reason-box"><div class="rb-title">ألغيتَ هذا الحجز</div><div class="rb-text"><b>السبب:</b> ' + reason + '</div></div>';
+}
+function hoursText(h) {
+  if (h < 1) return 'أقل من ساعة';
+  const r = Math.round(h);
+  return r === 1 ? 'ساعة واحدة' : r + ' ساعة';
+}
+
+/* ---- v5.2: واتساب الدعم (مسافر / مكتب / سائق) ---- */
+let _supportPhone = null;
+async function prefetchSupportPhone() {
+  try { _supportPhone = (await UbourDB.getPrimaryManagerPhone()) || _supportPhone; } catch (e) { /* تجاهل */ }
+}
+function initSupportWhatsApp() {
+  document.querySelectorAll('[data-support-whatsapp]').forEach((btn) => {
+    if (!btn.querySelector('svg')) btn.insertAdjacentHTML('afterbegin', ICONS.whatsapp);
+    btn.addEventListener('click', async () => {
+      const profile = _currentProfileCache || await UbourDB.getCurrentProfile();
+      const phone = _supportPhone || await UbourDB.getPrimaryManagerPhone();
+      if (!phone) { showToast('رقم الدعم غير متاح حالياً، أرسل رسالتك من الأسفل وسنردّ عليك', 'error', 5000); return; }
+      _supportPhone = phone;
+      const role = profile && profile.role === 'office' ? (profile.account_type === 'driver' ? 'سائق' : 'مكتب') : 'مسافر';
+      const who = profile && profile.name ? `${profile.name} (${role})` : role;
+      const msg = `السلام عليكم ورحمة الله 🌹\nأنا ${who} من تطبيق ${APP_CONFIG.nameShort}.\nيسعدني التواصل معكم بخصوص:\n`;
+      openExternal(whatsappLink(phone, msg));
+    });
   });
 }
 
@@ -1417,6 +1834,10 @@ function initTravelerScreen() {
   });
 
   document.getElementById('btn-traveler-logout').addEventListener('click', doLogout);
+  initSupportWhatsApp();   // يربط زر واتساب الدعم في شاشتي المسافر والمكتب/السائق
+  initTripFilters();
+  initReviewModal();
+  NotifUI.bindBells();
 
   document.getElementById('btn-confirm-booking-whatsapp').addEventListener('click', async () => {
     const trip = await UbourDB.getTripById(_bookingTripId);
@@ -1441,10 +1862,11 @@ function initTravelerScreen() {
 
     const office = await UbourDB.getProfileById(trip.office_id);
     const msg = APP_CONFIG.whatsappBookingTemplate
-      .replace('{trip}', `${trip.from_place} ← ${trip.to_place} بتاريخ ${esc(trip.trip_date)}`)
+      .replace('{trip}', `${trip.from_place} ← ${trip.to_place} يوم ${fmtDateAr(trip.trip_date)} الساعة ${fmtTime12(trip.trip_time)}`)
       .replace('{seats}', seats)
       .replace('{name}', name);
-    if (office && office.phone) openExternal(whatsappLink(office.phone, msg));
+    const officePhone = officeWaPhone(office);
+    if (officePhone) openExternal(whatsappLink(officePhone, msg));
 
     closeModals();
     await renderTravelerTrips();
@@ -1460,6 +1882,9 @@ async function renderOfficeScreen() {
   const office = await UbourDB.getCurrentProfile();
   if (!office) return;
   _currentProfileCache = office;
+  prefetchSupportPhone();
+  NotifUI.start(office.id);
+  renderOfficeStats(office);
 
   document.getElementById('office-user-name').textContent = office.name;
   document.getElementById('office-profile-phone').textContent = office.phone;
@@ -1471,6 +1896,10 @@ async function renderOfficeScreen() {
   document.getElementById('subscription-renew-box').classList.toggle('hidden', subActive);
 
   document.getElementById('input-office-edit-name').value = office.name || '';
+  document.getElementById('input-office-edit-location').value = office.address || '';
+  document.getElementById('input-office-edit-phone1').value = office.contact_phone || '';
+  document.getElementById('input-office-edit-phone2').value = office.contact_phone2 || '';
+  renderOfficeContactRows(office);
   const preview = document.getElementById('office-logo-preview');
   const placeholder = document.getElementById('office-logo-picker-placeholder');
   if (office.logo_url) {
@@ -1493,6 +1922,14 @@ async function renderOfficeScreen() {
   document.getElementById('office-view-requests').classList.remove('hidden');
 }
 
+function renderOfficeContactRows(office) {
+  const nums = [office.contact_phone, office.contact_phone2].filter(Boolean);
+  const el = document.getElementById('office-profile-contacts');
+  if (el) el.textContent = nums.length ? nums.join(' • ') : '—';
+  const addr = document.getElementById('office-profile-address');
+  if (addr) addr.textContent = office.address || '—';
+}
+
 function renderOfficeAvatar(office) {
   const wrap = document.getElementById('office-avatar-wrap');
   if (office.logo_url) {
@@ -1507,47 +1944,81 @@ async function renderOfficeRequests(office) {
   // تُستبعد طلبات أي رحلة أُلغيت بالكامل من قائمة الطلبات النشطة (حُذفت "من خانة الطلبات")
   const allBookings = await UbourDB.getBookingsForOffice(office.id);
   const bookings = allBookings.filter(b => b.trips && b.trips.office_id === office.id);
-  const withTrips = await Promise.all(
-    bookings.filter(b => b.status !== undefined).map(async (b) => ({ b, trip: await UbourDB.getTripById(b.trip_id) }))
-  );
+  const withTrips = await Promise.all(bookings.map(async (b) => ({ b, trip: await UbourDB.getTripById(b.trip_id) })));
   const active = withTrips.filter(({ trip }) => trip && trip.status !== 'cancelled');
 
   if (!active.length) {
     list.innerHTML = `<div class="empty-state">${ICONS.bell}<div class="mt-2">لا توجد طلبات حجز واردة بعد</div></div>`;
     return;
   }
+  const byId = {};
+  active.forEach((x) => { byId[x.b.id] = x; });
+
   list.innerHTML = active.slice().reverse().map(({ b, trip }) => {
+    const badge = bookingBadge(b, 'office');
+    const pending = b.status === 'pending';
+    const confirmed = b.status === 'completed';
     const cancelled = b.status === 'cancel_requested';
+    const who = b.cancelled_by === 'office' ? 'من طرفك' : 'من المسافر';
     return `
       <div class="list-card">
         <div class="lc-top">
-          <span class="lc-title">${esc(b.traveler_name)}</span>
-          <span class="badge-pill status-${esc(b.status)}">${bookingStatusLabel(b.status)}</span>
+          <div>
+            <span class="lc-title">${esc(b.traveler_name)}</span>
+            <div class="lc-sub"><bdi dir="ltr">${esc(b.traveler_phone)}</bdi></div>
+          </div>
+          <span class="badge-pill ${badge.cls}">${esc(badge.text)}</span>
         </div>
         <div class="lc-route">${ICONS.route}<span>${esc(trip.from_place)}</span>${ICONS.chevron}<span>${esc(trip.to_place)}</span></div>
-        <div class="lc-meta"><span>${ICONS.clock}${esc(trip.trip_date)} — ${esc(trip.trip_time)}</span><span>${esc(b.seats)} مقعد</span>${trip.vehicle_type ? `<span>${ICONS.bus} ${esc(trip.vehicle_type)}</span>` : ''}</div>
-        ${cancelled && b.cancel_reason ? `<div class="lc-sub" style="color:var(--error); margin-bottom:10px;">سبب الإلغاء: ${esc(b.cancel_reason)}</div>` : ''}
-        <div class="lc-actions">
-          ${!cancelled ? `<button class="whatsapp-btn" data-wa-booking="${esc(b.id)}">${ICONS.whatsapp}تواصل واتساب</button>` : ''}
-          ${!cancelled && b.status !== 'completed' ? `<button class="icon-action-btn" data-cancel-booking="${esc(b.id)}" data-cancel-by="office" title="إلغاء الحجز">${ICONS.x}</button>` : ''}
+        ${tripTimesHtml(trip)}
+        <div class="lc-meta"><span>${esc(b.seats)} مقعد</span>${trip.vehicle_type ? `<span>${ICONS.bus} ${esc(trip.vehicle_type)}</span>` : ''}</div>
+        ${b.ready_at && !cancelled ? '<div class="remind-box ok">✅ المسافر أكّد جاهزيته للرحلة</div>' : ''}
+        ${cancelled && b.cancel_reason ? `<div class="lc-sub" style="color:var(--error); margin-bottom:10px;">سبب الإلغاء (${who}): ${esc(b.cancel_reason)}</div>` : ''}
+        <div class="lc-actions lc-actions-wrap">
+          ${pending ? `<button type="button" class="act-btn act-confirm" data-confirm-booking="${esc(b.id)}">✅ تأكيد</button><button type="button" class="act-btn act-reject" data-reject-booking="${esc(b.id)}">❌ عدم تأكيد</button>` : ''}
+          ${confirmed ? `<button type="button" class="act-btn act-reject" data-cancel-confirmed="${esc(b.id)}">إلغاء الحجز المؤكَّد</button>` : ''}
+          ${!cancelled ? `<button type="button" class="whatsapp-btn" data-wa-booking="${esc(b.id)}">${ICONS.whatsapp}واتساب</button>` : ''}
         </div>
       </div>`;
   }).join('');
 
+  // تواصل فقط (يُرسَل من هاتف المكتب/السائق نفسه إلى رقم المسافر) — لا يغيّر حالة الحجز
   list.querySelectorAll('[data-wa-booking]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const x = byId[btn.dataset.waBooking];
+      if (!x) return;
+      const msg = `مرحباً ${x.b.traveler_name}، معك ${office.name} بخصوص حجزك لرحلة ${x.trip.from_place} ← ${x.trip.to_place} يوم ${fmtDateAr(x.trip.trip_date)} الساعة ${fmtTime12(x.trip.trip_time)}.`;
+      openExternal(whatsappLink(x.b.traveler_phone, msg));
+    });
+  });
+
+  // تأكيد: نسجّل الحالة في القاعدة أولاً، ثم تُفتح رسالة التأكيد من هاتف المكتب/السائق إلى المسافر
+  list.querySelectorAll('[data-confirm-booking]').forEach(btn => {
     btn.addEventListener('click', async () => {
-      const allB = await UbourDB.getAllBookings();
-      const booking = allB.find(x => x.id === btn.dataset.waBooking);
-      if (!booking) return;
-      const trip = await UbourDB.getTripById(booking.trip_id);
-      const msg = `مرحباً ${booking.traveler_name}، بخصوص حجزك لرحلة ${trip.from_place} ← ${trip.to_place} بتاريخ ${esc(trip.trip_date)} (${booking.seats} مقعد) — نؤكد لك الحجز ✅`;
-      openExternal(whatsappLink(booking.traveler_phone, msg));
-      await UbourDB.updateBookingStatus(booking.id, 'completed');
+      const x = byId[btn.dataset.confirmBooking];
+      if (!x || btn.disabled) return;
+      btn.disabled = true;
+      try { await UbourDB.updateBookingStatus(x.b.id, 'completed'); }
+      catch (e) { showToast(bookingErrorMessage(e), 'error', 5000); console.error(e); await renderOfficeRequests(office); return; }
+      const nums = officeContactNumbers(office);
+      const msg = `مرحباً ${x.b.traveler_name} 👋\nيسرّنا تأكيد حجزك مع ${office.name} ✅\n` +
+        `الرحلة: ${x.trip.from_place} ← ${x.trip.to_place}\n` +
+        `التحرك: ${fmtDateAr(x.trip.trip_date)} الساعة ${fmtTime12(x.trip.trip_time)}\n` +
+        (x.trip.checkin_time ? `الحضور المطلوب: ${fmtTime12(x.trip.checkin_time)}\n` : '') +
+        `عدد المقاعد: ${x.b.seats}\n` +
+        (office.address ? `موقعنا: ${office.address}\n` : '') +
+        (nums.length ? `للتواصل: ${nums.join(' / ')}\n` : '') +
+        `نتمنى لك رحلة سعيدة 🌟`;
+      openExternal(whatsappLink(x.b.traveler_phone, msg));
+      showToast('تم تأكيد الحجز', 'success');
       await renderOfficeRequests(office);
     });
   });
-  list.querySelectorAll('[data-cancel-booking]').forEach(btn => {
-    btn.addEventListener('click', () => openCancelModal(btn.dataset.cancelBooking, 'office'));
+  list.querySelectorAll('[data-reject-booking]').forEach(btn => {
+    btn.addEventListener('click', () => openCancelModal(btn.dataset.rejectBooking, 'office', 'booking', 'reject'));
+  });
+  list.querySelectorAll('[data-cancel-confirmed]').forEach(btn => {
+    btn.addEventListener('click', () => openCancelModal(btn.dataset.cancelConfirmed, 'office', 'booking', 'cancel-confirmed'));
   });
 }
 
@@ -1568,7 +2039,8 @@ async function renderOfficeTrips(office) {
         <span class="lc-price">${esc(t.price)} ${currencyLabel(t.currency)}</span>
       </div>
       <div class="lc-route">${ICONS.route}<span>${esc(t.from_place)}</span>${ICONS.chevron}<span>${esc(t.to_place)}</span></div>
-      <div class="lc-meta"><span>${ICONS.clock}${esc(t.trip_date)} — ${esc(t.trip_time)}</span><span>${esc(t.seats_available)}/${esc(t.seats_total)} مقعد متاح</span>${t.vehicle_type ? `<span>${ICONS.bus} ${esc(t.vehicle_type)}</span>` : ''}</div>
+      ${tripTimesHtml(t)}
+      <div class="lc-meta"><span>${esc(t.seats_available)}/${esc(t.seats_total)} مقعد متاح</span>${t.vehicle_type ? `<span>${ICONS.bus} ${esc(t.vehicle_type)}</span>` : ''}</div>
       ${t.status === 'cancelled' && t.cancel_reason ? `<div class="lc-sub" style="color:var(--error); margin-bottom:10px;">سبب الإلغاء: ${esc(t.cancel_reason)}</div>` : ''}
       <div class="lc-actions">
         ${t.status !== 'cancelled' ? `<button class="btn btn-ghost" data-edit-trip="${esc(t.id)}" style="padding:11px; font-size:13px; flex:1;">تعديل</button>` : ''}
@@ -1594,7 +2066,13 @@ async function renderOfficeTrips(office) {
 
 /* ---- تعديل رحلة (للمكتب/السائق صاحب الرحلة فقط — تفرضه قاعدة البيانات أيضاً عبر RLS) ---- */
 let _editingTrip = null;
-const _TRIP_FIELD_IDS = ['input-trip-from', 'input-trip-to', 'input-trip-vehicle', 'input-trip-price', 'input-trip-seats', 'input-trip-date', 'input-trip-time'];
+const _TRIP_FIELD_IDS = ['input-trip-from', 'input-trip-to', 'input-trip-vehicle', 'input-trip-price', 'input-trip-seats', 'input-trip-date', 'input-trip-time', 'input-trip-checkin'];
+function updateTripTimePreviews() {
+  const t = document.getElementById('input-trip-time').value, c = document.getElementById('input-trip-checkin').value;
+  const pt = document.getElementById('preview-trip-time'), pc = document.getElementById('preview-trip-checkin');
+  if (pt) pt.textContent = t ? 'سيظهر للمسافرين: ' + fmtTime12(t) : '';
+  if (pc) pc.textContent = c ? 'سيظهر للمسافرين: ' + fmtTime12(c) : '';
+}
 function _setTripModalMode(editing) {
   document.getElementById('add-trip-title').textContent = editing ? 'تعديل الرحلة' : 'إضافة رحلة جديدة';
   document.getElementById('add-trip-btn-label').textContent = editing ? 'حفظ التعديلات' : 'نشر الرحلة';
@@ -1612,6 +2090,8 @@ function openEditTripModal(trip) {
   document.getElementById('input-trip-seats').value = trip.seats_total;
   document.getElementById('input-trip-date').value = trip.trip_date;
   document.getElementById('input-trip-time').value = String(trip.trip_time || '').slice(0, 5);
+  document.getElementById('input-trip-checkin').value = String(trip.checkin_time || '').slice(0, 5);
+  updateTripTimePreviews();
   document.getElementById('modal-add-trip').classList.add('active');
 }
 
@@ -1622,6 +2102,7 @@ function initOfficeScreen() {
       item.classList.add('active');
       document.querySelectorAll('#screen-office .home-view').forEach(v => v.classList.add('hidden'));
       document.getElementById('office-view-' + item.dataset.officeTab).classList.remove('hidden');
+      if (item.dataset.officeTab === 'profile' && _currentProfileCache) renderOfficeStats(_currentProfileCache);
     });
   });
 
@@ -1644,10 +2125,16 @@ function initOfficeScreen() {
   document.getElementById('select-trip-currency').innerHTML = APP_CONFIG.currencies.map(c => `<option value="${c.code}">${c.label}</option>`).join('');
   document.getElementById('datalist-vehicle-types').innerHTML = APP_CONFIG.vehicleTypes.map(v => `<option value="${v}"></option>`).join('');
 
+  ['input-trip-time', 'input-trip-checkin'].forEach((id) => {
+    const inp = document.getElementById(id);
+    ['input', 'change'].forEach((ev) => inp.addEventListener(ev, updateTripTimePreviews));
+  });
+
   document.getElementById('btn-open-add-trip').addEventListener('click', () => {
     _editingTrip = null;
     _setTripModalMode(false);
     _TRIP_FIELD_IDS.forEach(id => document.getElementById(id).value = '');
+    updateTripTimePreviews();
     document.getElementById('modal-add-trip').classList.add('active');
   });
 
@@ -1655,18 +2142,27 @@ function initOfficeScreen() {
     const from = document.getElementById('input-trip-from').value.trim();
     const to = document.getElementById('input-trip-to').value.trim();
     const vehicleType = document.getElementById('input-trip-vehicle').value.trim();
-    const price = normalizeDigits(document.getElementById('input-trip-price').value).replace(/[^\d.]/g, '');
+    const price = normalizeDigits(document.getElementById('input-trip-price').value).trim();
     const currency = document.getElementById('select-trip-currency').value;
-    const seats = normalizeDigits(document.getElementById('input-trip-seats').value).replace(/\D/g, '');
+    const seats = normalizeDigits(document.getElementById('input-trip-seats').value).trim();
     const date = document.getElementById('input-trip-date').value;
     const time = document.getElementById('input-trip-time').value;
+    const checkin = document.getElementById('input-trip-checkin').value;
     const errorEl = document.getElementById('error-add-trip');
     errorEl.classList.remove('show');
 
     if (!from || !to) { errorEl.textContent = 'يرجى تحديد نقطتي الانطلاق والوصول'; errorEl.classList.add('show'); return; }
     if (from === to) { errorEl.textContent = 'يجب أن تختلف نقطة الانطلاق عن الوصول'; errorEl.classList.add('show'); return; }
     if (!price || !seats || !date || !time) { errorEl.textContent = 'يرجى تعبئة جميع الحقول'; errorEl.classList.add('show'); return; }
-    if (!(Number(price) > 0) || !(Number(seats) > 0) || !Number.isInteger(Number(seats))) { errorEl.textContent = 'يرجى إدخال قيم صحيحة للسعر وعدد المقاعد'; errorEl.classList.add('show'); return; }
+    if (!/^\d+(\.\d{1,2})?$/.test(price) || !/^\d+$/.test(seats) || !(Number(price) > 0) || !(Number(seats) > 0)) { errorEl.textContent = 'يرجى إدخال قيم صحيحة للسعر وعدد المقاعد'; errorEl.classList.add('show'); return; }
+    if (checkin) {
+      const gap = checkinGapHours(checkin, time);
+      if (gap === null || gap > 12) { errorEl.textContent = 'وقت الحضور يجب أن يسبق وقت التحرك بما لا يزيد عن 12 ساعة'; errorEl.classList.add('show'); return; }
+    }
+    if (!_editingTrip && !(tripDepartureMs({ trip_date: date, trip_time: time }) > Date.now())) {
+      errorEl.textContent = 'موعد التحرك يجب أن يكون في المستقبل — تحقق من التاريخ والوقت (صباحاً/مساءً)';
+      errorEl.classList.add('show'); return;
+    }
 
     const office = await UbourDB.getCurrentProfile();
     if (!office) return;
@@ -1684,7 +2180,8 @@ function initOfficeScreen() {
           from_place: from, to_place: to, vehicle_type: vehicleType || null,
           price: Number(price), currency,
           seats_total: Number(seats), seats_available: Number(seats) - booked,
-          trip_date: date, trip_time: time
+          trip_date: date, trip_time: time,
+          ...((checkin || ('checkin_time' in _editingTrip)) ? { checkin_time: checkin || null } : {})
         });
         _editingTrip = null;
         closeModals();
@@ -1698,11 +2195,12 @@ function initOfficeScreen() {
     }
 
     try {
-      await UbourDB.createTrip({ officeId: office.id, officeName: office.name, from, to, price, currency, seatsTotal: seats, date, time, vehicleType });
+      await UbourDB.createTrip({ officeId: office.id, officeName: office.name, from, to, price, currency, seatsTotal: seats, date, time, vehicleType, checkin });
       closeModals();
       await renderOfficeTrips(office);
       showToast('تم نشر الرحلة بنجاح', 'success');
-      ['input-trip-from', 'input-trip-to', 'input-trip-vehicle', 'input-trip-price', 'input-trip-seats', 'input-trip-date', 'input-trip-time'].forEach(id => document.getElementById(id).value = '');
+      ['input-trip-from', 'input-trip-to', 'input-trip-vehicle', 'input-trip-price', 'input-trip-seats', 'input-trip-date', 'input-trip-time', 'input-trip-checkin'].forEach(id => document.getElementById(id).value = '');
+      updateTripTimePreviews();
     } catch (e) {
       showToast((e && (e.code === '42501' || /row-level security/i.test(String(e.message || '')))) ? 'اشتراكك منتهٍ أو غير مفعّل — تواصل مع الإدارة للتجديد' : 'تعذّر نشر الرحلة، حاول مجدداً', 'error');
       console.error(e);
@@ -1724,7 +2222,7 @@ function initOfficeScreen() {
     reader.onload = (ev) => {
       const img = new Image();
       img.onload = () => {
-        const maxDim = 300;
+        const maxDim = 480;
         let w = img.width, h = img.height;
         if (w > h && w > maxDim) { h = Math.round(h * maxDim / w); w = maxDim; }
         else if (h > maxDim) { w = Math.round(w * maxDim / h); h = maxDim; }
@@ -1749,7 +2247,13 @@ function initOfficeScreen() {
     if (!office) return;
     const name = document.getElementById('input-office-edit-name').value.trim();
     if (!name) { showToast('يرجى إدخال الاسم', 'error'); return; }
-    const patch = { name };
+    const location = document.getElementById('input-office-edit-location').value.trim();
+    const p1 = document.getElementById('input-office-edit-phone1').value.trim();
+    const p2 = document.getElementById('input-office-edit-phone2').value.trim();
+    let c1 = null, c2 = null;
+    if (p1) { const r1 = UbourAuth.detectPhone(p1); if (!r1.valid) { showToast('رقم التواصل الأول غير صحيح (يمني 7xxxxxxxx أو سعودي 05xxxxxxxx)', 'error', 5000); return; } c1 = r1.e164; }
+    if (p2) { const r2 = UbourAuth.detectPhone(p2); if (!r2.valid) { showToast('رقم التواصل الثاني غير صحيح (يمني 7xxxxxxxx أو سعودي 05xxxxxxxx)', 'error', 5000); return; } c2 = r2.e164; }
+    const patch = { name, address: location || null, contact_phone: c1, contact_phone2: c2 };
     // ملاحظة هامة: صورة الشعار محفوظة هنا كنص Base64 طويل مباشرة في عمود
     // logo_url (كما كانت في النسخة التجريبية السابقة). هذا يعمل، لكن الأصح
     // للإنتاج الحقيقي رفعها كملف إلى Supabase Storage وحفظ رابط قصير فقط —
@@ -1759,6 +2263,10 @@ function initOfficeScreen() {
       const updated = await UbourDB.updateOffice(office.id, patch);
       document.getElementById('office-user-name').textContent = name;
       renderOfficeAvatar(updated);
+      renderOfficeContactRows(updated);
+      document.getElementById('input-office-edit-phone1').value = updated.contact_phone || '';
+      document.getElementById('input-office-edit-phone2').value = updated.contact_phone2 || '';
+      _currentProfileCache = updated;
       _pendingLogoDataUrl = null;
       showToast('تم حفظ التعديلات', 'success');
     } catch (e) {
@@ -1796,6 +2304,7 @@ async function renderAdminScreen() {
   await renderAdminManagers();
   await renderAdminAds();
   await renderAdminSupport('all');
+  await renderAdminReviews();
 
   // ملاحظة: هوية التطبيق (الاسم/الشعار المخصّص من لوحة الإدارة) لا تزال
   // محفوظة محلياً على هذا الجهاز فقط (localStorage) وليست في قاعدة
@@ -2001,6 +2510,33 @@ function applyAppIdentity() {
   }
 }
 
+async function renderAdminReviews() {
+  const list = document.getElementById('admin-reviews-list');
+  if (!list) return;
+  const [reviews, users] = await Promise.all([UbourDB.getAllReviews(100), UbourDB.getAllUsers()]);
+  if (!reviews.length) { list.innerHTML = `<div class="empty-state">${ICONS.info}<div class="mt-2">لا توجد تقييمات بعد</div></div>`; return; }
+  const names = {};
+  (users || []).forEach((u) => { names[u.id] = u.name || u.phone || ''; });
+  list.innerHTML = reviews.map((r) => `
+    <div class="list-card">
+      <div class="lc-top">
+        <span class="lc-title">${esc(names[r.office_id] || 'مكتب/سائق')}</span>
+        <button class="icon-action-btn" data-delete-review="${esc(r.id)}" aria-label="حذف التقييم">${ICONS.trash}</button>
+      </div>
+      <div class="lc-sub"><span class="rb-star">${starsText(r.rating)}</span> — ${esc(r.traveler_first_name || 'مسافر')}</div>
+      ${r.comment ? `<div class="rv-comment">${esc(r.comment)}</div>` : ''}
+      <div class="lc-sub" style="margin-top:6px;">${esc(String(r.created_at || '').slice(0, 10))}</div>
+    </div>`).join('');
+  list.querySelectorAll('[data-delete-review]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      if (!window.confirm('حذف هذا التقييم نهائياً؟')) return;
+      try { await UbourDB.deleteReview(btn.dataset.deleteReview); showToast('تم حذف التقييم', 'success'); }
+      catch (e) { showToast('تعذّر حذف التقييم', 'error'); console.error(e); }
+      await renderAdminReviews();
+    });
+  });
+}
+
 function initAdminScreen() {
   document.querySelectorAll('#screen-admin .admin-tab').forEach(tab => {
     tab.addEventListener('click', () => {
@@ -2171,7 +2707,7 @@ document.addEventListener('input', (e) => {
    • أندرويد (Chrome): زر "تثبيت" بضغطة واحدة عبر beforeinstallprompt، وإلا خطوات يدوية.
    • آيفون: لا يسمح Apple بالتثبيت البرمجي، فنافذة خطوات واضحة (Safari ← مشاركة ← إضافة).
    • داخل متصفحات التطبيقات (واتساب/تيليغرام/فيسبوك...): نطلب فتح الرابط في المتصفح مع زر نسخ.
-   • يختفي كل شيء داخل التطبيق المثبّت. ملف APK: APP_CONFIG.apkUrl (فارغ = "قريباً").
+   • يختفي كل شيء داخل التطبيق المثبّت. ملف APK: APP_CONFIG.apkUrl (فارغ = لا يظهر الزر).
    ========================================================================= */
 const InstallUI = (() => {
   const ua = navigator.userAgent || '';
@@ -2336,11 +2872,7 @@ const InstallUI = (() => {
         a.href = url; a.setAttribute('download', ''); a.rel = 'noopener';
         card.appendChild(a);
         card.appendChild(el('div', 'dl-hint', 'بعد التنزيل افتح الملف؛ قد يطلب أندرويد السماح بالتثبيت من هذا المصدر، وهذا طبيعي للتطبيقات خارج المتجر.'));
-      } else {
-        const d = row('dl-android disabled', ICONS.android, 'تحميل للأندرويد', 'ملف APK', 'div');
-        d.appendChild(el('span', 'dl-badge', 'قريباً'));
-        card.appendChild(d);
-      }
+      }   // لا رابط APK بعد: لا نعرض أي زر أو عبارة
     }
     if (showIOS) {
       const ios = row('dl-ios', ICONS.phone, 'للآيفون', 'ثبّت من Safari — خطوات بسيطة');
@@ -2377,4 +2909,220 @@ const InstallUI = (() => {
   });
 
   return { refresh, openSheet };
+})();
+
+
+/* =========================================================================
+   v5.3 — نافذة التقييم، إحصائيات المكتب، والتنبيهات
+   ========================================================================= */
+let _reviewCtx = null, _reviewRating = 0;
+function _paintStars() {
+  document.querySelectorAll('#star-picker [data-star]').forEach((b) => b.classList.toggle('on', Number(b.dataset.star) <= _reviewRating));
+}
+function openReviewModal(bookingId, officeName) {
+  _reviewCtx = { bookingId };
+  _reviewRating = 0; _paintStars();
+  document.getElementById('input-review-comment').value = '';
+  const err = document.getElementById('error-review'); if (err) { err.textContent = ''; err.classList.remove('show'); }
+  const nm = document.getElementById('review-office-name'); if (nm) nm.textContent = officeName ? 'تقييم: ' + officeName : '';
+  document.getElementById('modal-review').classList.add('active');
+}
+function initReviewModal() {
+  document.querySelectorAll('#star-picker [data-star]').forEach((b) => b.addEventListener('click', () => { _reviewRating = Number(b.dataset.star) || 0; _paintStars(); }));
+  const submit = document.getElementById('btn-submit-review');
+  if (!submit) return;
+  submit.addEventListener('click', async () => {
+    if (!_reviewCtx) return;
+    const errEl = document.getElementById('error-review');
+    const comment = document.getElementById('input-review-comment').value.trim();
+    if (!(_reviewRating >= 1 && _reviewRating <= 5)) { errEl.textContent = 'اختر عدد النجوم أولاً'; errEl.classList.add('show'); return; }
+    errEl.classList.remove('show');
+    try { await UbourDB.createReview({ bookingId: _reviewCtx.bookingId, rating: _reviewRating, comment: comment.slice(0, 200) }); }
+    catch (e) { showToast(bookingErrorMessage(e), 'error', 5000); console.error(e); return; }
+    closeModals(); _reviewCtx = null;
+    showToast('شكراً لتقييمك 🌟', 'success');
+    await renderTravelerBookings();
+    await renderTravelerTrips();
+  });
+}
+
+async function renderOfficeStats(office) {
+  const box = document.getElementById('office-stats');
+  if (!box || !office) return;
+  const [stats, ratings, reviews] = await Promise.all([UbourDB.getOfficeStats(), UbourDB.getOfficeRatings([office.id]), UbourDB.getOfficeReviews(office.id, 5)]);
+  if (!stats) { box.innerHTML = ''; return; }
+  const num = (v) => (v == null ? '—' : esc(v));
+  const cards = [
+    ['رحلات منفذة', stats.trips_executed, 'انتهى موعدها ولم تُلغَ'],
+    ['رحلات قادمة', stats.trips_upcoming, ''],
+    ['مقاعد متاحة', stats.seats_available, 'في الرحلات القادمة'],
+    ['مقاعد محجوزة', stats.seats_booked, 'في الرحلات القادمة'],
+    ['ركاب تم نقلهم', stats.passengers_served, 'حجوزات مؤكَّدة منتهية'],
+    ['حجوزات ملغاة', stats.bookings_cancelled, '']
+  ];
+  const rt = ratings[office.id];
+  box.innerHTML =
+    '<div class="section-title">أداء الحركة<span class="line"></span></div>' +
+    '<div class="stats-grid">' + cards.map((c) => '<div class="stat-card"><div class="sc-num">' + num(c[1]) + '</div><div class="sc-label">' + esc(c[0]) + '</div>' + (c[2] ? '<div class="sc-sub">' + esc(c[2]) + '</div>' : '') + '</div>').join('') + '</div>' +
+    '<div class="section-title">تقييمات المسافرين<span class="line"></span></div>' +
+    '<div class="reviews-box">' +
+      '<div class="rv-summary">' + ratingBadgeHtml(rt) + '</div>' +
+      (reviews.length ? reviews.map((r) => '<div class="rv-item"><div class="rv-head"><span class="rb-star">' + starsText(r.rating) + '</span><span class="rv-name">' + esc(r.traveler_first_name || 'مسافر') + '</span></div>' + (r.comment ? '<div class="rv-comment">' + esc(r.comment) + '</div>' : '') + '</div>').join('') : '<div class="lc-sub" style="padding:6px 2px;">لا توجد تقييمات بعد</div>') +
+    '</div>';
+}
+
+/* ---- التنبيهات داخل التطبيق (Realtime) ---- */
+const NotifUI = (() => {
+  const OFFICE_KINDS = ['booking_new', 'booking_cancelled_by_traveler', 'traveler_ready'];
+  let channel = null, userId = null, items = [], timer = null, bound = false;
+  const unreadCount = () => items.filter((n) => !n.read_at).length;
+
+  function renderBadge() {
+    const n = unreadCount();
+    document.querySelectorAll('[data-notif-badge]').forEach((b) => { b.textContent = n > 99 ? '99+' : String(n); b.hidden = n === 0; });
+  }
+  function timeAgo(iso) {
+    const t = new Date(iso).getTime(); if (!t) return '';
+    const m = Math.round((Date.now() - t) / 60000);
+    if (m < 1) return 'الآن';
+    if (m < 60) return 'قبل ' + m + ' دقيقة';
+    const h = Math.round(m / 60); if (h < 24) return 'قبل ' + h + ' ساعة';
+    return String(iso).slice(0, 10);
+  }
+  /* ---- Web Push: وصول التنبيهات حتى والتطبيق مغلق ---- */
+  function urlB64ToUint8(b64) {
+    const pad = '='.repeat((4 - (b64.length % 4)) % 4);
+    const raw = atob((b64 + pad).replace(/-/g, '+').replace(/_/g, '/'));
+    const out = new Uint8Array(raw.length);
+    for (let i = 0; i < raw.length; i++) out[i] = raw.charCodeAt(i);
+    return out;
+  }
+  function pushSupported() {
+    return ('serviceWorker' in navigator) && ('PushManager' in window) && ('Notification' in window) && !!APP_CONFIG.vapidPublicKey;
+  }
+  async function subscribePush() {
+    if (!pushSupported()) return false;
+    try {
+      const reg = await navigator.serviceWorker.ready;
+      let sub = await reg.pushManager.getSubscription();
+      if (!sub) sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlB64ToUint8(APP_CONFIG.vapidPublicKey) });
+      return await UbourDB.savePushSubscription(sub);
+    } catch (e) { return false; }
+  }
+  async function syncPush() { if (pushSupported() && Notification.permission === 'granted') return subscribePush(); return false; }
+  async function removePush() {
+    try {
+      if (!pushSupported()) return;
+      const reg = await navigator.serviceWorker.ready;
+      const sub = await reg.pushManager.getSubscription();
+      if (sub) await UbourDB.removePushSubscription(sub.endpoint);
+    } catch (e) { /* تجاهل */ }
+  }
+
+  async function refresh() { items = await UbourDB.getNotifications(50); renderBadge(); }
+  function isOpen() { const m = document.getElementById('modal-notifications'); return !!m && m.classList.contains('active'); }
+
+  function renderList(fresh) {
+    const box = document.getElementById('notif-list');
+    if (!box) return;
+    if (!items.length) { box.innerHTML = '<div class="empty-state">لا توجد تنبيهات بعد</div>'; return; }
+    box.innerHTML = items.map((n) =>
+      '<button type="button" class="notif-item' + (fresh && fresh.has(n.id) ? ' unread' : '') + '" data-notif-id="' + esc(n.id) + '" data-notif-kind="' + esc(n.kind) + '">' +
+        '<div class="ni-title">' + esc(n.title) + '</div>' + (n.body ? '<div class="ni-body">' + esc(n.body) + '</div>' : '') +
+        '<div class="ni-time">' + esc(timeAgo(n.created_at)) + '</div></button>').join('');
+    box.querySelectorAll('[data-notif-id]').forEach((b) => b.addEventListener('click', () => go(b.dataset.notifKind)));
+  }
+  function go(kind) {
+    closeModals();
+    const office = OFFICE_KINDS.indexOf(kind) !== -1;
+    const tab = document.querySelector(office ? '#screen-office .nav-item[data-office-tab="requests"]' : '#screen-traveler .nav-item[data-traveler-tab="bookings"]');
+    if (tab) tab.click();
+    if (office) { if (_currentProfileCache) renderOfficeRequests(_currentProfileCache); } else { renderTravelerBookings(); }
+  }
+  function deviceNotify(n) {
+    try {
+      if (!('Notification' in window) || Notification.permission !== 'granted' || !document.hidden) return;
+      const opts = { body: n.body || '', icon: 'icons/icon-192.png', tag: n.id, lang: 'ar', dir: 'rtl' };
+      if (navigator.serviceWorker && navigator.serviceWorker.ready) {
+        navigator.serviceWorker.ready.then((reg) => reg.showNotification(n.title, opts)).catch(() => { new Notification(n.title, opts); });
+      } else { new Notification(n.title, opts); }
+    } catch (e) { /* تجاهل */ }
+  }
+  function onInsert(n) {
+    if (!n || items.some((x) => x.id === n.id)) return;
+    items.unshift(n); renderBadge();
+    showToast(n.title + (n.body ? ' — ' + String(n.body).split('\n')[0] : ''), 'info', 6000);
+    deviceNotify(n);
+    if (isOpen()) renderList(new Set([n.id]));
+  }
+  function refreshDeviceBox() {
+    const box = document.getElementById('notif-device-box');
+    if (!box) return;
+    const btn = document.getElementById('btn-notif-enable');
+    const hint = document.getElementById('notif-device-hint');
+    const ua = navigator.userAgent || '';
+    const ios = /iPad|iPhone|iPod/.test(ua);
+    let showBtn = false, text = '';
+    if (!('Notification' in window)) {
+      text = ios ? 'على الآيفون: ثبّت التطبيق على الشاشة الرئيسية أولاً (مشاركة ← إضافة إلى الشاشة الرئيسية) ثم فعّل التنبيهات من هنا.' : 'متصفحك لا يدعم تنبيهات الجهاز.';
+    } else if (Notification.permission === 'default') {
+      showBtn = true; text = 'فعّل التنبيهات لتصلك حتى والتطبيق مغلق.';
+    } else if (Notification.permission === 'granted') {
+      text = pushSupported() ? '✅ تنبيهات الجهاز مفعّلة: ستصلك حتى والتطبيق مغلق.' : '';
+    } else {
+      text = 'التنبيهات محظورة من إعدادات المتصفح؛ فعّلها من إعدادات الموقع إن أردتها.';
+    }
+    box.style.display = (showBtn || text) ? '' : 'none';
+    if (btn) btn.style.display = showBtn ? '' : 'none';
+    if (hint) hint.textContent = text;
+  }
+
+  async function start(uid) {
+    if (userId === uid && channel) return;
+    stop(); userId = uid;
+    await refresh();
+    syncPush();   // يجدّد اشتراك الجهاز إن كان الإذن ممنوحاً
+    try {
+      channel = supabaseClient.channel('notif-' + uid)
+        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notifications', filter: 'user_id=eq.' + uid }, (p) => onInsert(p && p.new))
+        .subscribe();
+    } catch (e) { /* التنبيهات تُحدَّث دورياً */ }
+    timer = setInterval(() => { if (!document.hidden) refresh(); }, 60000);
+  }
+  function stop() {
+    try { if (channel) supabaseClient.removeChannel(channel); } catch (e) { /* تجاهل */ }
+    channel = null; userId = null; items = [];
+    if (timer) clearInterval(timer);
+    timer = null; renderBadge();
+  }
+  async function open() {
+    await refresh();
+    const fresh = new Set(items.filter((n) => !n.read_at).map((n) => n.id));
+    renderList(fresh); refreshDeviceBox();
+    document.getElementById('modal-notifications').classList.add('active');
+    if (fresh.size && await UbourDB.markNotificationsRead()) {
+      const now = new Date().toISOString();
+      items.forEach((n) => { if (!n.read_at) n.read_at = now; });
+      renderBadge();
+    }
+  }
+  function bindBells() {
+    if (bound) return; bound = true;
+    document.querySelectorAll('[data-open-notifications]').forEach((b) => {
+      if (!b.querySelector('svg')) b.insertAdjacentHTML('afterbegin', ICONS.bell);
+      b.addEventListener('click', open);
+    });
+    const en = document.getElementById('btn-notif-enable');
+    if (en) en.addEventListener('click', async () => {
+      try {
+        const p = await Notification.requestPermission();
+        if (p === 'granted') {
+          const ok = await subscribePush();
+          showToast(ok ? 'تم تفعيل التنبيهات: ستصلك حتى والتطبيق مغلق' : 'سُمح بالتنبيهات لكن تعذّر تفعيلها والتطبيق مغلق', ok ? 'success' : 'info', 5000);
+        } else { showToast('لم يُسمح بالتنبيهات', 'info'); }
+      } catch (e) { /* تجاهل */ }
+      refreshDeviceBox();
+    });
+  }
+  return { start, stop, bindBells, removePush, _items: () => items };
 })();

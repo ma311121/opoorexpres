@@ -1155,6 +1155,94 @@ button, a, .nav-item { touch-action: manipulation; }
 .dl-row.disabled { opacity: 0.6; pointer-events: none; }
 .dl-badge { font-size: 11px; font-weight: 800; padding: 3px 8px; border-radius: 999px; background: rgba(110,118,144,0.25); color: var(--text-secondary); }
 .dl-hint { font-size: 12px; color: var(--text-muted); line-height: 1.7; }
+
+/* =========================================================================
+   v5.2 — بيانات المكتب، الأوقات، أزرار إدارة الحجوزات، ترحيب الدعم
+   ========================================================================= */
+.office-head { display: flex; align-items: center; gap: 12px; margin-bottom: var(--space-3); }
+.office-avatar { width: 44px; height: 44px; border-radius: 50%; object-fit: cover; flex-shrink: 0; }
+.office-avatar-lg { width: 68px; height: 68px; border-radius: 18px; border: 2px solid var(--gold-400); box-shadow: 0 4px 14px rgba(0,0,0,0.4); background: var(--navy-900); }
+.office-avatar-ph { display: flex; align-items: center; justify-content: center; background: rgba(201,161,92,0.15); color: var(--gold-400); font-weight: 900; font-size: 26px; }
+.office-meta { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.office-name { font-size: 16px; font-weight: 800; color: var(--white); }
+.office-line { display: flex; align-items: flex-start; gap: 6px; font-size: 12px; color: var(--text-secondary); line-height: 1.5; }
+.office-line svg { flex-shrink: 0; margin-top: 3px; color: var(--gold-400); }
+.trip-times { display: flex; flex-wrap: wrap; gap: 8px; margin: 2px 0 var(--space-3); }
+.time-chip { display: flex; align-items: center; gap: 6px; padding: 7px 10px; border-radius: 10px; font-size: 12.5px; color: var(--text-primary); background: rgba(255,255,255,0.05); border: 1px solid var(--navy-border); }
+.time-chip b { font-size: 11px; color: var(--text-muted); font-weight: 700; }
+.time-chip strong { color: var(--gold-400); font-weight: 900; font-size: 14px; }
+.time-dep { border-color: rgba(201,161,92,0.5); background: rgba(201,161,92,0.08); }
+.time-checkin { border-color: rgba(22,191,173,0.45); background: rgba(22,191,173,0.08); }
+.time-checkin strong { color: var(--teal-300); }
+.time-preview { font-size: 12px; color: var(--teal-300); margin-top: 6px; min-height: 16px; }
+.field-hint { font-size: 12px; color: var(--text-muted); line-height: 1.7; }
+.lc-actions-wrap { flex-wrap: wrap; }
+.act-btn { flex: 1 1 40%; padding: 11px 8px; border-radius: var(--radius-sm); font-weight: 800; font-size: 13px; font-family: inherit; cursor: pointer; border: 1px solid transparent; }
+.act-confirm { background: rgba(45,212,167,0.15); color: var(--success); border-color: var(--success); }
+.act-reject { background: rgba(239,90,95,0.1); color: var(--error); border-color: var(--error); }
+.act-btn:disabled { opacity: 0.5; }
+.list-card .lc-actions-wrap .whatsapp-btn { flex: 1 1 100%; }
+.support-welcome { margin-bottom: var(--space-5); padding: var(--space-4); border-radius: var(--radius-md); background: linear-gradient(180deg, rgba(201,161,92,0.1), rgba(201,161,92,0.03)); border: 1px solid rgba(201,161,92,0.35); }
+.support-welcome .sw-title { font-size: 17px; font-weight: 800; color: var(--gold-400); margin-bottom: 8px; }
+.support-welcome p { font-size: 13.5px; line-height: 1.9; color: var(--text-secondary); margin-bottom: var(--space-3); }
+[data-download-slot="inline"] .dl-card { margin-inline: 0; margin-bottom: var(--space-4); }
+
+/* =========================================================================
+   v5.3 — التقييم، التنبيهات، التصفية، الإحصائيات
+   ========================================================================= */
+[hidden] { display: none !important; }
+.link-btn { background: none; border: none; color: var(--gold-400); font-family: inherit; font-size: 13px; font-weight: 700; cursor: pointer; padding: 4px 6px; }
+
+.rating-badge { display: inline-flex; align-items: center; gap: 4px; font-size: 12.5px; color: var(--text-primary); }
+.rating-badge .rb-star, .rb-star { color: #f5b73b; letter-spacing: 1px; }
+.rating-badge b { color: var(--white); font-weight: 800; }
+.rating-badge small { color: var(--text-muted); font-size: 11.5px; }
+.rating-badge.rb-new { color: var(--text-muted); font-size: 11.5px; }
+
+.reason-box { margin: 8px 0 10px; padding: 11px 12px; border-radius: 12px; background: rgba(255,255,255,0.04); border: 1px solid var(--navy-border); }
+.reason-box.reject { background: rgba(239,90,95,0.1); border-color: var(--error); }
+.reason-box .rb-title { font-weight: 800; font-size: 13.5px; color: var(--text-primary); margin-bottom: 4px; }
+.reason-box.reject .rb-title { color: var(--error); }
+.reason-box .rb-text { font-size: 13px; line-height: 1.8; color: var(--text-secondary); white-space: pre-line; }
+.reason-box .rb-text b { color: var(--text-primary); }
+
+.remind-box { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 8px 0 10px; padding: 10px 12px; border-radius: 12px; font-size: 13px; line-height: 1.7; background: rgba(201,161,92,0.1); border: 1px solid rgba(201,161,92,0.4); color: var(--text-primary); }
+.remind-box.ok { background: rgba(45,212,167,0.1); border-color: var(--success); color: var(--success); justify-content: flex-start; }
+.remind-box .act-btn { flex: 0 0 auto; padding: 8px 12px; }
+.review-done { margin: 8px 0; font-size: 13px; color: var(--text-secondary); }
+.review-done .rv-comment, .rv-comment { margin-top: 4px; color: var(--text-primary); font-size: 13px; line-height: 1.7; }
+
+.star-picker { display: flex; justify-content: center; gap: 6px; margin: 4px 0 16px; direction: ltr; }
+.star-btn { background: none; border: none; font-size: 40px; line-height: 1; color: var(--navy-border); cursor: pointer; padding: 2px 4px; font-family: inherit; }
+.star-btn.on { color: #f5b73b; }
+
+.bell-btn { position: relative; flex-shrink: 0; width: 44px; height: 44px; border-radius: 14px; border: 1px solid var(--navy-border); background: rgba(255,255,255,0.05); color: var(--gold-400); display: flex; align-items: center; justify-content: center; cursor: pointer; }
+.bell-btn svg { width: 22px; height: 22px; }
+.bell-badge { position: absolute; top: -6px; inset-inline-start: -6px; min-width: 20px; height: 20px; padding: 0 5px; border-radius: 999px; background: var(--error); color: #fff; font-size: 11px; font-weight: 800; display: flex; align-items: center; justify-content: center; }
+.notif-item { display: block; width: 100%; text-align: right; font-family: inherit; padding: 12px; margin-bottom: 8px; border-radius: 14px; border: 1px solid var(--navy-border); background: var(--navy-900); color: var(--text-primary); cursor: pointer; }
+.notif-item.unread { border-color: rgba(201,161,92,0.6); background: rgba(201,161,92,0.08); }
+.notif-item .ni-title { font-weight: 800; font-size: 14px; margin-bottom: 4px; }
+.notif-item .ni-body { font-size: 12.5px; line-height: 1.8; color: var(--text-secondary); white-space: pre-line; }
+.notif-item .ni-time { margin-top: 6px; font-size: 11.5px; color: var(--text-muted); }
+
+.filter-bar { margin-top: 12px; display: flex; flex-direction: column; gap: 10px; }
+.chip-row { display: flex; gap: 8px; flex-wrap: wrap; }
+.chip { padding: 8px 14px; border-radius: 999px; border: 1px solid var(--navy-border); background: rgba(255,255,255,0.04); color: var(--text-secondary); font-family: inherit; font-size: 13px; font-weight: 700; cursor: pointer; }
+.chip.active { background: rgba(201,161,92,0.18); border-color: var(--gold-400); color: var(--gold-400); }
+.filter-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
+.filter-select { width: 100%; min-width: 0; background: var(--navy-900); color: var(--text-primary); border: 1px solid var(--navy-border); border-radius: var(--radius-sm); padding: 11px 8px; font-family: inherit; font-size: 13px; }
+.filter-meta { display: flex; align-items: center; justify-content: space-between; font-size: 12.5px; color: var(--text-muted); min-height: 22px; }
+
+.stats-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; padding: 0 var(--space-5) var(--space-4); }
+.stat-card { padding: 14px 12px; border-radius: var(--radius-md); background: linear-gradient(180deg, rgba(24,41,67,0.7), rgba(16,29,51,0.85)); border: 1px solid var(--navy-border); text-align: center; }
+.stat-card .sc-num { font-size: 28px; font-weight: 900; color: var(--gold-400); line-height: 1.2; }
+.stat-card .sc-label { font-size: 13px; font-weight: 800; color: var(--text-primary); margin-top: 2px; }
+.stat-card .sc-sub { font-size: 11px; color: var(--text-muted); margin-top: 3px; line-height: 1.5; }
+.reviews-box { margin: 0 var(--space-5) var(--space-5); padding: var(--space-3) var(--space-4); border-radius: var(--radius-md); background: rgba(255,255,255,0.03); border: 1px solid var(--navy-border); }
+.reviews-box .rv-summary { margin-bottom: 8px; }
+.rv-item { padding: 10px 0; border-top: 1px solid var(--navy-border); }
+.rv-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 13px; }
+.rv-name { color: var(--text-secondary); font-weight: 700; }
 </style>
 </head>
 <body>
@@ -1306,7 +1394,7 @@ button, a, .nav-item { touch-action: manipulation; }
 
       <label class="checkbox-row">
         <input type="checkbox" id="checkbox-terms">
-        <span>أوافق على <a href="#">شروط الاستخدام</a> و<a href="#">سياسة الخصوصية</a></span>
+        <span>أوافق على <a href="terms.html" target="_blank" rel="noopener">شروط الاستخدام</a> و<a href="privacy.html" target="_blank" rel="noopener">سياسة الخصوصية</a></span>
       </label>
 
       <button class="btn btn-primary" id="btn-create-account">
@@ -1473,11 +1561,27 @@ button, a, .nav-item { touch-action: manipulation; }
               <div class="user-phone" id="traveler-user-phone">—</div>
             </div>
           </div>
+          <button type="button" class="bell-btn" data-open-notifications aria-label="التنبيهات"><span class="bell-badge" data-notif-badge hidden>0</span></button>
         </div>
         <div style="padding: 0 var(--space-5) var(--space-5);">
           <div class="input-wrap">
             <span class="input-icon" id="icon-trip-search"></span>
             <input type="text" id="input-trip-search" placeholder="ابحث عن مدينة الانطلاق أو الوصول...">
+          </div>
+          <div class="filter-bar">
+            <div class="chip-row" role="group" aria-label="وقت الرحلة">
+              <button type="button" class="chip active" data-filter-time="">كل الأوقات</button>
+              <button type="button" class="chip" data-filter-time="am">🌅 صباحاً</button>
+              <button type="button" class="chip" data-filter-time="pm">🌙 مساءً</button>
+            </div>
+            <div class="filter-grid">
+              <select id="filter-destination" class="filter-select" aria-label="الوجهة"><option value="">كل الوجهات</option></select>
+              <select id="filter-rating" class="filter-select" aria-label="تقييم المكتب">
+                <option value="0">أي تقييم</option><option value="3">★ 3 فأكثر</option><option value="4">★ 4 فأكثر</option><option value="4.5">★ 4.5 فأكثر</option>
+              </select>
+              <select id="filter-sort" class="filter-select" aria-label="الترتيب"><option value="soonest">الأقرب موعداً</option><option value="rating">الأعلى تقييماً</option></select>
+            </div>
+            <div class="filter-meta"><span id="filter-summary"></span><button type="button" class="link-btn" id="btn-clear-filters" style="display:none;">مسح التصفية</button></div>
           </div>
         </div>
         <div class="section-title">الرحلات المتاحة<span class="line"></span></div>
@@ -1493,6 +1597,11 @@ button, a, .nav-item { touch-action: manipulation; }
       <div id="traveler-view-support" class="home-view hidden">
         <div class="view-header"><h2>الدعم الفني</h2></div>
         <div style="padding: 0 var(--space-5);">
+          <div class="support-welcome">
+            <div class="sw-title">يسعدنا خدمتك 🌟</div>
+            <p>فريق عبور إكسبريس بجانبك دائماً. نرحّب بملاحظاتك واقتراحاتك وبلاغاتك بصدر رحب، فكل رسالة منك تساعدنا على تطوير الخدمة وجعلها أفضل لك. تواصل معنا مباشرة عبر واتساب وسنردّ عليك في أقرب وقت.</p>
+            <button type="button" class="whatsapp-btn" data-support-whatsapp><span>تواصل مع الإدارة عبر واتساب</span></button>
+          </div>
           <div class="field">
             <label for="input-support-message">كيف يمكننا مساعدتك؟</label>
             <div class="input-wrap"><input type="text" id="input-support-message" placeholder="اكتب رسالتك هنا..."></div>
@@ -1526,7 +1635,8 @@ button, a, .nav-item { touch-action: manipulation; }
       <div class="modal-sheet">
         <div class="modal-handle"></div>
         <h3>تأكيد الحجز</h3>
-        <p id="book-trip-summary" style="color:var(--text-secondary); font-size:13.5px; margin-bottom:16px; line-height:1.8;"></p>
+        <div id="book-trip-office" style="margin-bottom:12px;"></div>
+        <div id="book-trip-summary" style="color:var(--text-secondary); font-size:13.5px; margin-bottom:16px; line-height:1.8;"></div>
         <div class="field">
           <label for="input-booker-name">اسمك</label>
           <div class="input-wrap"><input type="text" id="input-booker-name" placeholder="الاسم الكامل"></div>
@@ -1558,6 +1668,7 @@ button, a, .nav-item { touch-action: manipulation; }
               <div class="user-phone" id="office-user-name">—</div>
             </div>
           </div>
+          <button type="button" class="bell-btn" data-open-notifications aria-label="التنبيهات"><span class="bell-badge" data-notif-badge hidden>0</span></button>
         </div>
         <div class="service-cards" id="office-requests-list" style="margin-bottom:24px;"></div>
         <div data-download-slot></div>
@@ -1574,6 +1685,11 @@ button, a, .nav-item { touch-action: manipulation; }
       <div id="office-view-support" class="home-view hidden">
         <div class="view-header"><h2>الدعم الفني</h2></div>
         <div style="padding: 0 var(--space-5);">
+          <div class="support-welcome">
+            <div class="sw-title">يسعدنا خدمتك 🌟</div>
+            <p>فريق عبور إكسبريس بجانبك دائماً. نرحّب بملاحظاتك واقتراحاتك وبلاغاتك بصدر رحب، فكل رسالة منك تساعدنا على تطوير الخدمة وجعلها أفضل لك. تواصل معنا مباشرة عبر واتساب وسنردّ عليك في أقرب وقت.</p>
+            <button type="button" class="whatsapp-btn" data-support-whatsapp><span>تواصل مع الإدارة عبر واتساب</span></button>
+          </div>
           <div class="field">
             <label for="input-office-support-message">كيف يمكننا مساعدتك؟</label>
             <div class="input-wrap"><input type="text" id="input-office-support-message" placeholder="اكتب رسالتك هنا..."></div>
@@ -1587,22 +1703,36 @@ button, a, .nav-item { touch-action: manipulation; }
         <div class="profile-card">
           <div class="profile-avatar" id="office-avatar-wrap"><span id="icon-office-avatar"></span></div>
           <div class="profile-row"><span class="label">رقم الجوال</span><span class="value" id="office-profile-phone">—</span></div>
-          <div class="profile-row"><span class="label">العنوان</span><span class="value" id="office-profile-address">—</span></div>
+          <div class="profile-row"><span class="label">موقع المكتب</span><span class="value" id="office-profile-address">—</span></div>
+          <div class="profile-row"><span class="label">أرقام التواصل</span><span class="value" id="office-profile-contacts">—</span></div>
           <div class="profile-row"><span class="label">الاشتراك</span><span class="value" id="office-profile-subscription">—</span></div>
         </div>
         <div id="subscription-renew-box" class="hidden" style="margin: 0 var(--space-5) var(--space-5); padding: var(--space-4); background: rgba(239,90,95,0.08); border: 1px dashed var(--error); border-radius: var(--radius-md);">
           <p style="font-size:13px; color:var(--error); font-weight:700; margin-bottom:10px;">انتهى اشتراكك — رحلاتك لن تظهر للمسافرين حتى تجدّده.</p>
           <button class="whatsapp-btn" id="btn-request-subscription" style="width:100%;"><span id="icon-request-sub"></span><span>تواصل مع الإدارة لتجديد الاشتراك</span></button>
         </div>
+        <div id="office-stats"></div>
         <div style="padding: 0 var(--space-5);">
           <div class="field">
             <label for="input-office-edit-name">اسم المكتب / السائق</label>
             <div class="input-wrap"><input type="text" id="input-office-edit-name"></div>
           </div>
           <div class="field">
+            <label for="input-office-edit-location">موقع المكتب</label>
+            <div class="input-wrap"><input type="text" id="input-office-edit-location" maxlength="200" placeholder="المدينة/الحي أو رابط الموقع على الخريطة"></div>
+          </div>
+          <div class="field">
+            <label for="input-office-edit-phone1">رقم التواصل / واتساب</label>
+            <div class="input-wrap"><input type="tel" id="input-office-edit-phone1" inputmode="tel" autocomplete="off" placeholder="7xxxxxxxx أو 05xxxxxxxx"></div>
+          </div>
+          <div class="field">
+            <label for="input-office-edit-phone2">رقم تواصل إضافي (اختياري)</label>
+            <div class="input-wrap"><input type="tel" id="input-office-edit-phone2" inputmode="tel" autocomplete="off" placeholder="7xxxxxxxx أو 05xxxxxxxx"></div>
+          </div>
+          <div class="field-hint" style="margin:-6px 0 14px;">يظهر اسم المكتب وموقعه وأرقام التواصل للمسافرين تحت كل رحلة، وزر واتساب يتصل بالرقم الأول تلقائياً.</div>
+          <div class="field">
             <label>شعار المكتب / السائق</label>
-            <div data-download-slot></div>
-        <div class="logo-picker" id="btn-pick-office-logo">
+            <div class="logo-picker" id="btn-pick-office-logo">
               <img id="office-logo-preview" class="logo-picker-preview hidden" alt="معاينة الشعار">
               <span id="office-logo-picker-placeholder" class="logo-picker-placeholder">
                 <span id="icon-upload"></span>
@@ -1614,6 +1744,7 @@ button, a, .nav-item { touch-action: manipulation; }
           <button class="btn btn-primary" id="btn-save-office-profile" style="margin-bottom:14px;">
             <span class="btn-label">حفظ التعديلات</span><span class="spinner"></span>
           </button>
+          <div data-download-slot="inline"></div>
           <button class="btn btn-ghost" id="btn-office-logout"><span id="icon-office-logout"></span><span class="btn-label">تسجيل الخروج</span></button>
         </div>
       </div>
@@ -1665,9 +1796,15 @@ button, a, .nav-item { touch-action: manipulation; }
             <div class="input-wrap"><input type="date" id="input-trip-date"></div>
           </div>
           <div class="field" style="flex:1;">
-            <label for="input-trip-time">الوقت</label>
+            <label for="input-trip-time">وقت التحرك (صباحاً/مساءً)</label>
             <div class="input-wrap"><input type="time" id="input-trip-time"></div>
+            <div class="time-preview" id="preview-trip-time"></div>
           </div>
+        </div>
+        <div class="field">
+          <label for="input-trip-checkin">وقت الحضور (اختياري) — متى يجب أن يكون المسافرون جاهزين</label>
+          <div class="input-wrap"><input type="time" id="input-trip-checkin"></div>
+          <div class="time-preview" id="preview-trip-checkin"></div>
         </div>
         <div class="field-error" id="error-add-trip"></div>
         <button class="btn btn-primary" id="btn-submit-add-trip">
@@ -1700,6 +1837,7 @@ button, a, .nav-item { touch-action: manipulation; }
         <button class="admin-tab" data-admin-tab="managers">المدراء</button>
         <button class="admin-tab" data-admin-tab="ads">الإعلانات</button>
         <button class="admin-tab" data-admin-tab="support">الدعم الفني</button>
+        <button class="admin-tab" data-admin-tab="reviews">التقييمات</button>
         <button class="admin-tab" data-admin-tab="identity">هوية التطبيق</button>
       </div>
 
@@ -1766,6 +1904,11 @@ button, a, .nav-item { touch-action: manipulation; }
         <div class="service-cards" id="admin-support-list"></div>
       </div>
 
+      <!-- التقييمات (إشراف) -->
+      <div id="admin-view-reviews" class="admin-view hidden">
+        <div class="lc-sub" style="padding:16px var(--space-5) 0;">آخر 100 تقييم. يمكنك حذف أي تقييم مسيء.</div>
+        <div class="service-cards" id="admin-reviews-list" style="padding-top:12px;"></div>
+      </div>
       <!-- هوية التطبيق -->
       <div id="admin-view-identity" class="admin-view hidden">
         <div style="padding: 16px var(--space-5) 0;">
@@ -1790,6 +1933,41 @@ button, a, .nav-item { touch-action: manipulation; }
 
   <!-- نافذة عامة: إلغاء حجز أو رحلة كاملة مع تحديد السبب — تُستخدم من شاشتي
        المسافر والمكتب معاً، لذا وُضعت هنا كعنصر مشترك خارج أي شاشة محددة -->
+  <div class="modal-overlay" id="modal-review">
+    <div class="modal-sheet">
+      <div class="modal-handle"></div>
+      <h3>قيّم رحلتك</h3>
+      <div id="review-office-name" style="color:var(--text-secondary); font-size:13.5px; margin-bottom:10px;"></div>
+      <div class="star-picker" id="star-picker" role="radiogroup" aria-label="التقييم">
+        <button type="button" class="star-btn" data-star="1" aria-label="نجمة واحدة">★</button>
+        <button type="button" class="star-btn" data-star="2" aria-label="نجمتان">★</button>
+        <button type="button" class="star-btn" data-star="3" aria-label="3 نجوم">★</button>
+        <button type="button" class="star-btn" data-star="4" aria-label="4 نجوم">★</button>
+        <button type="button" class="star-btn" data-star="5" aria-label="5 نجوم">★</button>
+      </div>
+      <div class="field">
+        <label for="input-review-comment">تعليق قصير (اختياري)</label>
+        <div class="input-wrap"><input type="text" id="input-review-comment" maxlength="200" placeholder="كيف كانت تجربتك؟"></div>
+      </div>
+      <div class="field-error" id="error-review"></div>
+      <button class="btn btn-primary" id="btn-submit-review"><span class="btn-label">إرسال التقييم</span><span class="spinner"></span></button>
+      <button class="btn btn-text" data-close-modal style="margin-top:10px;">تراجع</button>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="modal-notifications">
+    <div class="modal-sheet" style="max-height:80vh; max-height:80dvh; overflow:auto;">
+      <div class="modal-handle"></div>
+      <h3>التنبيهات</h3>
+      <div id="notif-list"></div>
+      <div id="notif-device-box" style="display:none; margin-top:14px;">
+        <button type="button" class="btn btn-ghost" id="btn-notif-enable">🔔 تفعيل تنبيهات الجهاز</button>
+        <div class="field-hint" id="notif-device-hint" style="margin-top:8px;"></div>
+      </div>
+      <button class="btn btn-text" data-close-modal style="margin-top:10px;">إغلاق</button>
+    </div>
+  </div>
+
   <div class="modal-overlay" id="modal-cancel-booking">
     <div class="modal-sheet">
       <div class="modal-handle"></div>

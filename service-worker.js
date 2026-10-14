@@ -1,17 +1,19 @@
 /* =========================================================================
-   عبور إكسبريس — Service Worker (v5.1)
+   عبور إكسبريس — Service Worker (v5.4)
    • صفحات و JS: الشبكة أولاً (تصل التحديثات الأمنية فوراً) ثم الكاش دون اتصال.
    • الأيقونات والصور: الكاش أولاً مع تحديث في الخلفية.
    • الطلبات الخارجية (Supabase وCDN) لا يتدخل فيها نهائياً — لا تُخزَّن بيانات المستخدمين.
    عند أي تحديث للملفات غيّر CACHE_VERSION.
    ========================================================================= */
-const CACHE_VERSION = 'ubour-v5.1.0';
+const CACHE_VERSION = 'ubour-v5.4.0';
 
 const APP_SHELL = [
   './',
   './index.html',
   './app.js',
   './sentry-config.js',
+  './privacy.html',
+  './terms.html',
   './manifest.json',
   './icons/icon-192.png',
   './icons/icon-512.png',
@@ -74,4 +76,30 @@ self.addEventListener('fetch', (event) => {
       return hit || refresh;
     })
   );
+});
+
+// عند الضغط على تنبيه الجهاز: نُظهر نافذة التطبيق أو نفتحها
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  event.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((list) => {
+      for (const c of list) { if ('focus' in c) return c.focus(); }
+      if (self.clients.openWindow) return self.clients.openWindow('./');
+    })
+  );
+});
+
+// تنبيهات Web Push القادمة من الخادم (حتى والتطبيق مغلق). يجب عرض إشعار مع كل دفعة (متطلب iOS).
+self.addEventListener('push', (event) => {
+  let data = {};
+  try { data = event.data ? event.data.json() : {}; } catch (e) { data = {}; }
+  const title = data.title || 'عبور إكسبريس';
+  event.waitUntil(self.registration.showNotification(title, {
+    body: data.body || '',
+    icon: 'icons/icon-192.png',
+    badge: 'icons/icon-192.png',
+    tag: data.tag || undefined,       // نفس معرّف التنبيه الداخلي: لا تكرار عند وصول الاثنين
+    lang: 'ar', dir: 'rtl',
+    data: { url: data.url || './' }
+  }));
 });
