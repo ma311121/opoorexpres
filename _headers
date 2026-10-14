@@ -1,0 +1,29 @@
+# ترويسات الأمان (Netlify / Cloudflare Pages). ضع هذا الملف بجانب index.html باسم _headers بلا امتداد.
+# GitHub Pages لا يدعم هذا الملف؛ سياسة CSP موجودة أيضاً كـ <meta> داخل index.html لتعمل هناك.
+/*
+  Content-Security-Policy: default-src 'self'; script-src 'self' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https:; connect-src 'self' https://yytkkvgepauahwfvyicp.supabase.co wss://yytkkvgepauahwfvyicp.supabase.co; manifest-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'
+  X-Content-Type-Options: nosniff
+  X-Frame-Options: DENY
+  Referrer-Policy: strict-origin-when-cross-origin
+  Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=()
+  Strict-Transport-Security: max-age=31536000; includeSubDomains
+  Cross-Origin-Opener-Policy: same-origin
+
+/service-worker.js
+  Cache-Control: no-cache
+/app.js
+  Cache-Control: no-cache
+/index.html
+  Cache-Control: no-cache
+
+/manifest.json
+  Content-Type: application/manifest+json
+  Cache-Control: no-cache
+
+/.well-known/assetlinks.json
+  Content-Type: application/json
+  Access-Control-Allow-Origin: *
+  Cache-Control: no-cache
+
+/icons/*
+  Cache-Control: public, max-age=86400

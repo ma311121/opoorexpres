@@ -1,0 +1,50 @@
+{
+  "name": "عبور إكسبريس - Ubour Express",
+  "short_name": "عبور",
+  "description": "منصتك الشاملة لنقل الركاب والشحن داخل اليمن وإلى السعودية — يربط المسافات ويختصر الطريق",
+  "id": "/",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "display_override": [
+    "standalone",
+    "minimal-ui"
+  ],
+  "orientation": "portrait-primary",
+  "background_color": "#060E19",
+  "theme_color": "#060E19",
+  "lang": "ar",
+  "dir": "rtl",
+  "categories": [
+    "travel",
+    "transportation",
+    "business"
+  ],
+  "icons": [
+    {
+      "src": "icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icons/icon-maskable-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "icons/icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "prefer_related_applications": false
+}
