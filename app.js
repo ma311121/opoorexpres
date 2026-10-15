@@ -1277,9 +1277,22 @@ function officeAvatarHtml(o, size) {
   const ch = String((o && o.name) || '؟').trim().charAt(0) || '؟';
   return '<span class="' + cls + ' office-avatar-ph">' + esc(ch) + '</span>';
 }
-function officeInfoHtml(o) {
+/** أزرار "عرض/إخفاء التفاصيل" (الصندوق التالي للزر مباشرة) */
+function bindDetailsToggles(root) {
+  root.querySelectorAll('[data-toggle-details]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const box = btn.nextElementSibling;
+      if (!box) return;
+      const open = box.classList.toggle('open');
+      btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+      btn.textContent = open ? 'إخفاء التفاصيل' : (btn.dataset.label || 'عرض التفاصيل');
+    });
+  });
+}
+const PHONES_AFTER_CONFIRM_HINT = '<div class="lc-sub" style="margin-top:6px;">تظهر أرقام التواصل بعد تأكيد المكتب لحجزك — يمكنك التواصل الآن عبر زر واتساب.</div>';
+function officeInfoHtml(o, hidePhones) {
   if (!o) return '';
-  const nums = officeContactNumbers(o);
+  const nums = hidePhones ? [] : officeContactNumbers(o);
   const loc = o.address ? '<div class="office-line">' + _IC_PIN + '<span>' + esc(o.address) + '</span></div>' : '';
   const ph = nums.length ? '<div class="office-line">' + _IC_PHONE + '<span>' + nums.map(p => '<bdi dir="ltr">' + esc(p) + '</bdi>').join(' • ') + '</span></div>' : '';
   return loc + ph;
@@ -1551,7 +1564,7 @@ function drawTravelerTrips() {
         <span>${ICONS.users} ${esc(t.seats_available)} مقعد متاح</span>
         ${t.vehicle_type ? `<span>${ICONS.bus} ${esc(t.vehicle_type)}</span>` : ''}
       </div>
-      ${officeInfoHtml(office) ? `<button type="button" class="details-toggle" data-toggle-details aria-expanded="false">عرض التفاصيل</button><div class="trip-details">${officeInfoHtml(office)}</div>` : ''}
+      <button type="button" class="details-toggle" data-toggle-details aria-expanded="false">عرض التفاصيل</button><div class="trip-details">${officeInfoHtml(office, true)}${PHONES_AFTER_CONFIRM_HINT}</div>
       <div class="lc-actions">
         <button class="btn btn-primary" data-book-trip="${esc(t.id)}" style="margin-top:0;">حجز مقعد</button>
         <button class="whatsapp-btn" data-contact-trip="${esc(t.id)}" style="flex:0 0 auto; width:44px;">${ICONS.whatsapp}</button>
@@ -1562,15 +1575,7 @@ function drawTravelerTrips() {
   list.querySelectorAll('[data-book-trip]').forEach(btn => {
     btn.addEventListener('click', () => openBookingModal(btn.dataset.bookTrip));
   });
-  list.querySelectorAll('[data-toggle-details]').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const box = btn.nextElementSibling;
-      if (!box) return;
-      const open = box.classList.toggle('open');
-      btn.setAttribute('aria-expanded', open ? 'true' : 'false');
-      btn.textContent = open ? 'إخفاء التفاصيل' : 'عرض التفاصيل';
-    });
-  });
+  bindDetailsToggles(list);
   list.querySelectorAll('[data-contact-trip]').forEach(btn => {
     btn.addEventListener('click', () => {
       const trip = trips.find(x => x.id === btn.dataset.contactTrip);
@@ -1639,13 +1644,13 @@ async function renderTravelerBookings() {
           <div class="office-meta">
             <div class="office-name">${esc((office && office.name) || trip.office_name)}</div>
             ${ratingBadgeHtml(ratings[trip.office_id])}
-            ${officeInfoHtml(office)}
           </div>
           <span class="badge-pill ${badge.cls}">${esc(badge.text)}</span>
         </div>
         <div class="lc-route">${ICONS.route}<span>${esc(trip.from_place)}</span>${ICONS.chevron}<span>${esc(trip.to_place)}</span></div>
         ${tripTimesHtml(trip)}
         <div class="lc-meta"><span>${esc(b.seats)} مقعد</span></div>
+        <button type="button" class="details-toggle" data-toggle-details data-label="تفاصيل المكتب" aria-expanded="false">تفاصيل المكتب</button><div class="trip-details">${officeInfoHtml(office, b.status !== 'completed')}${b.status !== 'completed' && live ? PHONES_AFTER_CONFIRM_HINT : ''}</div>
         ${b.status === 'cancel_requested' ? cancelReasonBoxHtml(b) : ''}
         ${soon && !b.ready_at ? `<div class="remind-box"><span>⏰ رحلتك بعد ${esc(hoursText(hrs))}${ci}. هل أنت مستعد؟</span><button type="button" class="act-btn act-confirm" data-ready-booking="${esc(b.id)}">أنا جاهز ✅</button></div>` : ''}
         ${soon && b.ready_at ? `<div class="remind-box ok">✅ أكّدتَ جاهزيتك للرحلة${ci}</div>` : ''}
@@ -1659,6 +1664,7 @@ async function renderTravelerBookings() {
       </div>`;
   }).join('');
 
+  bindDetailsToggles(list);
   list.querySelectorAll('[data-cancel-booking]').forEach(btn => {
     btn.addEventListener('click', () => {
       const ctx = _tbCtx[btn.dataset.cancelBooking];
@@ -1983,24 +1989,51 @@ function renderOfficeAvatar(office) {
   }
 }
 
-async function renderOfficeRequests(office) {
+/* ---- بحث المكاتب/السائقين في رحلاتهم وطلباتهم ---- */
+const _officeSearch = { trips: '', requests: '' };
+let _officeTripsCache = null, _officeReqCache = null;
+function _norm(x) { return String(x == null ? '' : x).toLowerCase(); }
+function ensureOfficeSearch(list, key, placeholder, redraw) {
+  const id = 'office-search-' + key;
+  if (document.getElementById(id)) return;
+  const box = document.createElement('div');
+  box.id = id; box.className = 'office-search';
+  box.innerHTML = '<div class="input-wrap"><input type="search" autocomplete="off" maxlength="60" placeholder="' + placeholder + '"></div>';
+  list.parentNode.insertBefore(box, list);
+  box.querySelector('input').addEventListener('input', (e) => { _officeSearch[key] = e.target.value; redraw(); });
+}
+
+async function renderOfficeRequests(office, cached) {
   const list = document.getElementById('office-requests-list');
-  showSkeleton(list, 3);
-  // تُستبعد طلبات أي رحلة أُلغيت بالكامل من قائمة الطلبات النشطة (حُذفت "من خانة الطلبات")
-  const allBookings = await UbourDB.getBookingsForOffice(office.id);
-  const bookings = allBookings.filter(b => b.trips && b.trips.office_id === office.id);
-  const tripsMap = await UbourDB.getTripsByIds(bookings.map((b) => b.trip_id));
-  const withTrips = bookings.map((b) => ({ b, trip: tripsMap[b.trip_id] || null }));
-  const active = withTrips.filter(({ trip }) => trip && trip.status !== 'cancelled');
+  let active;
+  if (cached && _officeReqCache) {
+    active = _officeReqCache;
+  } else {
+    showSkeleton(list, 3);
+    // تُستبعد طلبات أي رحلة أُلغيت بالكامل من قائمة الطلبات النشطة (حُذفت "من خانة الطلبات")
+    const allBookings = await UbourDB.getBookingsForOffice(office.id);
+    const bookings = allBookings.filter(b => b.trips && b.trips.office_id === office.id);
+    const tripsMap = await UbourDB.getTripsByIds(bookings.map((b) => b.trip_id));
+    const withTrips = bookings.map((b) => ({ b, trip: tripsMap[b.trip_id] || null }));
+    active = withTrips.filter(({ trip }) => trip && trip.status !== 'cancelled');
+    _officeReqCache = active;
+  }
 
   if (!active.length) {
     list.innerHTML = `<div class="empty-state">${ICONS.bell}<div class="mt-2">لا توجد طلبات حجز واردة بعد</div></div>`;
     return;
   }
+  ensureOfficeSearch(list, 'requests', 'ابحث: اسم المسافر أو رقمه أو الوجهة', () => renderOfficeRequests(office, true));
+  const rq = _norm(_officeSearch.requests).trim();
+  const shownReq = rq ? active.filter(({ b, trip }) => _norm([b.traveler_name, b.traveler_phone, trip.from_place, trip.to_place].join(' ')).includes(rq)) : active;
+  if (!shownReq.length) {
+    list.innerHTML = `<div class="empty-state">${ICONS.bell}<div class="mt-2">لا توجد نتائج مطابقة</div></div>`;
+    return;
+  }
   const byId = {};
   active.forEach((x) => { byId[x.b.id] = x; });
 
-  list.innerHTML = active.slice().reverse().map(({ b, trip }) => {
+  list.innerHTML = shownReq.slice().reverse().map(({ b, trip }) => {
     const badge = bookingBadge(b, 'office');
     const pending = b.status === 'pending';
     const confirmed = b.status === 'completed';
@@ -2071,15 +2104,28 @@ async function renderOfficeRequests(office) {
 function tripStatusLabel(status) {
   return { active: 'نشطة', inactive: 'غير نشطة', cancelled: 'ملغاة' }[status] || status;
 }
-async function renderOfficeTrips(office) {
+async function renderOfficeTrips(office, cached) {
   const list = document.getElementById('office-trips-list');
-  showSkeleton(list, 3);
-  const trips = await UbourDB.getTripsByOffice(office.id);
+  let trips;
+  if (cached && _officeTripsCache) {
+    trips = _officeTripsCache;
+  } else {
+    showSkeleton(list, 3);
+    trips = await UbourDB.getTripsByOffice(office.id);
+    _officeTripsCache = trips;
+  }
   if (!trips.length) {
     list.innerHTML = `<div class="empty-state">${ICONS.route}<div class="mt-2">لم تُضِف أي رحلة بعد</div></div>`;
     return;
   }
-  list.innerHTML = trips.slice().reverse().map(t => `
+  ensureOfficeSearch(list, 'trips', 'ابحث: من / إلى / نوع المركبة / التاريخ', () => renderOfficeTrips(office, true));
+  const tq = _norm(_officeSearch.trips).trim();
+  const shownTrips = tq ? trips.filter(t => _norm([t.from_place, t.to_place, t.vehicle_type, t.trip_date, fmtDateAr(t.trip_date)].join(' ')).includes(tq)) : trips;
+  if (!shownTrips.length) {
+    list.innerHTML = `<div class="empty-state">${ICONS.route}<div class="mt-2">لا توجد نتائج مطابقة</div></div>`;
+    return;
+  }
+  list.innerHTML = shownTrips.slice().reverse().map(t => `
     <div class="list-card">
       <div class="lc-top">
         <span class="badge-pill status-${t.status === 'active' ? 'active' : t.status === 'cancelled' ? 'cancel_requested' : 'inactive'}">${tripStatusLabel(t.status)}</span>
