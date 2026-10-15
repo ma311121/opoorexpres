@@ -1465,8 +1465,21 @@ async function renderTravelerScreen() {
 let _tripsCache = [], _ratingsMap = {}, _tripText = '';
 const _tripFilters = { time: '', dest: '', minRating: 0, sort: 'soonest' };
 
+/** هياكل تحميل رمادية متحركة تظهر قبل وصول القوائم (أول تحميل فقط، لا وميض عند التحديث) */
+function skeletonHtml(n) {
+  let h = '';
+  for (let i = 0; i < n; i++) {
+    h += '<div class="skel-card" aria-hidden="true"><div class="skel-row"><span class="skel skel-circle"></span><span class="skel skel-line" style="width:45%"></span></div><span class="skel skel-line" style="width:70%"></span><span class="skel skel-line" style="width:35%"></span></div>';
+  }
+  return h;
+}
+function showSkeleton(el, n) {
+  if (el && !el.querySelector('.list-card')) el.innerHTML = skeletonHtml(n || 3);
+}
+
 async function renderTravelerTrips(filterText) {
   if (filterText != null) _tripText = filterText;
+  showSkeleton(document.getElementById('traveler-trips-list'), 3);
   _tripsCache = await UbourDB.getActiveTrips();
   const ids = Array.from(new Set(_tripsCache.map(t => t.office_id)));
   _ratingsMap = ids.length ? await UbourDB.getOfficeRatings(ids) : {};
@@ -1592,6 +1605,7 @@ async function renderTravelerBookings() {
   const profile = _currentProfileCache || await UbourDB.getCurrentProfile();
   const list = document.getElementById('traveler-bookings-list');
   if (!profile) { list.innerHTML = ''; return; }
+  showSkeleton(list, 3);
   const bookings = await UbourDB.getBookingsByTraveler(profile.id);
   if (!bookings.length) {
     list.innerHTML = `<div class="empty-state">${ICONS.box}<div class="mt-2">لا توجد حجوزات بعد</div></div>`;
@@ -1971,6 +1985,7 @@ function renderOfficeAvatar(office) {
 
 async function renderOfficeRequests(office) {
   const list = document.getElementById('office-requests-list');
+  showSkeleton(list, 3);
   // تُستبعد طلبات أي رحلة أُلغيت بالكامل من قائمة الطلبات النشطة (حُذفت "من خانة الطلبات")
   const allBookings = await UbourDB.getBookingsForOffice(office.id);
   const bookings = allBookings.filter(b => b.trips && b.trips.office_id === office.id);
@@ -2058,6 +2073,7 @@ function tripStatusLabel(status) {
 }
 async function renderOfficeTrips(office) {
   const list = document.getElementById('office-trips-list');
+  showSkeleton(list, 3);
   const trips = await UbourDB.getTripsByOffice(office.id);
   if (!trips.length) {
     list.innerHTML = `<div class="empty-state">${ICONS.route}<div class="mt-2">لم تُضِف أي رحلة بعد</div></div>`;
