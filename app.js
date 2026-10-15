@@ -2808,19 +2808,30 @@ const InstallUI = (() => {
     if (g.note) panel.appendChild(el('div', 'is-note', g.note));
     const actions = el('div', 'is-actions');
     if (g.copy) { const c = el('button', null, 'نسخ الرابط'); c.type = 'button'; c.addEventListener('click', copyLink); actions.appendChild(c); }
-    if (deferredPrompt) {
+    const canOneTap = !!deferredPrompt || apkOneTap();
+    if (canOneTap) {
       const inst = el('button', 'primary', 'تثبيت'); inst.type = 'button';
       inst.addEventListener('click', () => { closeSheet(); promptInstall(); });
       actions.appendChild(inst);
     }
-    const ok = el('button', deferredPrompt ? null : 'primary', 'فهمت'); ok.type = 'button'; ok.addEventListener('click', closeSheet);
+    const ok = el('button', canOneTap ? null : 'primary', 'فهمت'); ok.type = 'button'; ok.addEventListener('click', closeSheet);
     actions.appendChild(ok);
     panel.appendChild(actions);
     sheet.appendChild(panel);
     sheet.classList.add('show');
   }
 
+  function apkLink() { return (typeof APP_CONFIG !== 'undefined' && APP_CONFIG.apkUrl) ? APP_CONFIG.apkUrl : ''; }
+  function apkOneTap() { return isAndroid && !inAppBrowser && !!apkLink(); }
+  function downloadApk() {
+    const a = document.createElement('a');
+    a.href = apkLink(); a.setAttribute('download', 'ubour-express.apk'); a.rel = 'noopener';
+    document.body.appendChild(a); a.click(); a.remove();
+    showToast('بدأ تنزيل التطبيق — افتح الملف بعد انتهائه ثم اضغط «تثبيت»', 'info', 7000);
+  }
+
   async function promptInstall() {
+    if (apkOneTap()) { downloadApk(); return; }
     if (deferredPrompt) {
       const p = deferredPrompt; deferredPrompt = null;
       try { p.prompt(); const choice = await p.userChoice; if (choice && choice.outcome === 'accepted') installed = true; } catch (e) { /* تجاهل */ }
@@ -2865,14 +2876,15 @@ const InstallUI = (() => {
     const showIOS = isIOS || !isMobile;
 
     if (isAndroid) {
-      const pwa = row('dl-pwa', ICONS.download, deferredPrompt ? 'تثبيت التطبيق الآن' : 'كيف أثبّت التطبيق؟',
-        deferredPrompt ? 'ضغطة واحدة — يتحدّث تلقائياً' : 'خطوات بسيطة من المتصفح');
+      const quick = !!deferredPrompt || apkOneTap();
+      const pwa = row('dl-pwa', ICONS.download, quick ? 'تثبيت التطبيق الآن' : 'كيف أثبّت التطبيق؟',
+        quick ? 'ضغطة واحدة — يفتح كتطبيق كامل' : 'خطوات بسيطة من المتصفح');
       pwa.addEventListener('click', promptInstall);
       card.appendChild(pwa);
     }
     if (showAndroid) {
       const url = (typeof APP_CONFIG !== 'undefined' && APP_CONFIG.apkUrl) ? APP_CONFIG.apkUrl : '';
-      if (url) {
+      if (url && !isAndroid) {
         const bits = ['ملف APK'];
         if (APP_CONFIG.apkVersion) bits.push('الإصدار ' + APP_CONFIG.apkVersion);
         if (APP_CONFIG.apkSizeMb) bits.push(APP_CONFIG.apkSizeMb + ' م.ب');
@@ -2881,6 +2893,9 @@ const InstallUI = (() => {
         card.appendChild(a);
         card.appendChild(el('div', 'dl-hint', 'بعد التنزيل افتح الملف؛ قد يطلب أندرويد السماح بالتثبيت من هذا المصدر، وهذا طبيعي للتطبيقات خارج المتجر.'));
       }   // لا رابط APK بعد: لا نعرض أي زر أو عبارة
+      if (url && isAndroid) {
+        card.appendChild(el('div', 'dl-hint', 'بعد التنزيل افتح الملف؛ قد يطلب أندرويد السماح بالتثبيت من هذا المصدر، وهذا طبيعي للتطبيقات خارج المتجر.'));
+      }
     }
     if (showIOS) {
       const ios = row('dl-ios', ICONS.phone, 'للآيفون', 'ثبّت من Safari — خطوات بسيطة');
@@ -2903,7 +2918,7 @@ const InstallUI = (() => {
     const eligible = ready && isMobile && !standalone() && !installed && !dismissedRecently();
     if (!eligible || barAutoHidden) { if (bar) bar.classList.remove('show'); return; }
     const b = ensureBar();
-    const oneTap = isAndroid && !!deferredPrompt;
+    const oneTap = isAndroid && (!!deferredPrompt || apkOneTap());
     b.querySelector('[data-ib-sub]').textContent = oneTap ? 'وصول أسرع وبملء الشاشة' : (isIOS ? 'خطوات بسيطة من Safari' : 'خطوات بسيطة من المتصفح');
     b.querySelector('[data-ib-action]').textContent = oneTap ? 'تثبيت' : 'كيف؟';
     const wasShown = b.classList.contains('show');

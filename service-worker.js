@@ -5,7 +5,7 @@
    • الطلبات الخارجية (Supabase وCDN) لا يتدخل فيها نهائياً — لا تُخزَّن بيانات المستخدمين.
    عند أي تحديث للملفات غيّر CACHE_VERSION.
    ========================================================================= */
-const CACHE_VERSION = 'ubour-v5.4.1';
+const CACHE_VERSION = 'ubour-v5.4.2';
 
 const APP_SHELL = [
   './',
@@ -44,6 +44,7 @@ self.addEventListener('fetch', (event) => {
 
   const url = new URL(request.url);
   if (url.origin !== self.location.origin) return;           // لا نتدخل في Supabase/CDN
+  if (url.pathname.endsWith('.apk')) return;                  // ملف التطبيق يُنزَّل مباشرة دون تخزين
 
   const isCode = request.mode === 'navigate' || /\.(?:html|js|json)$/.test(url.pathname) || url.pathname.endsWith('/');
 
