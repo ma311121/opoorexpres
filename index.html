@@ -1243,6 +1243,11 @@ button, a, .nav-item { touch-action: manipulation; }
 .rv-item { padding: 10px 0; border-top: 1px solid var(--navy-border); }
 .rv-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 13px; }
 .rv-name { color: var(--text-secondary); font-weight: 700; }
+
+/* v5.5 — تفاصيل المكتب خلف زر في بطاقة الرحلة */
+.trip-card .details-toggle { background: none; border: none; color: var(--gold-400); font-family: inherit; font-size: 13px; font-weight: 700; padding: 6px 0; cursor: pointer; }
+.trip-card .trip-details { display: none; margin: 4px 0 8px; padding: 10px 12px; border-radius: 12px; background: var(--navy-800); border: 1px solid var(--navy-border); }
+.trip-card .trip-details.open { display: block; }
 </style>
 </head>
 <body>

@@ -253,6 +253,16 @@ const UbourDB = (() => {
       if (error) { console.error(error); return null; }
       return data;
     },
+    /** جلب عدة ملفات (مكاتب) باستعلام واحد (يعيد خريطة id → ملف) */
+    async getProfilesByIds(ids) {
+      const uniq = Array.from(new Set((ids || []).filter(Boolean)));
+      const map = {};
+      if (!uniq.length) return map;
+      const { data, error } = await supabaseClient.from('profiles').select('*').in('id', uniq);
+      if (error) { console.error(error); return map; }
+      (data || []).forEach((p) => { map[p.id] = p; });
+      return map;
+    },
     async findProfileByPhone(phone) {
       const { data, error } = await supabaseClient.from('profiles').select('*').eq('phone', phone).maybeSingle();
       if (error) { console.error(error); return null; }
@@ -497,6 +507,16 @@ const UbourDB = (() => {
       const { data, error } = await supabaseClient.from('trips').select('*').eq('id', id).maybeSingle();
       if (error) { console.error(error); return null; }
       return data;
+    },
+    /** جلب عدة رحلات باستعلام واحد بدل استعلام لكل حجز (يعيد خريطة id → رحلة) */
+    async getTripsByIds(ids) {
+      const uniq = Array.from(new Set((ids || []).filter(Boolean)));
+      const map = {};
+      if (!uniq.length) return map;
+      const { data, error } = await supabaseClient.from('trips').select('*').in('id', uniq);
+      if (error) { console.error(error); return map; }
+      (data || []).forEach((t) => { map[t.id] = t; });
+      return map;
     },
     async updateTrip(id, patch) {
       const { data, error } = await supabaseClient.from('trips').update(patch).eq('id', id).select().single();
@@ -1509,7 +1529,6 @@ function drawTravelerTrips() {
         <div class="office-meta">
           <div class="office-name">${esc(officeName)}</div>
           ${ratingBadgeHtml(_ratingsMap[t.office_id])}
-          ${officeInfoHtml(office)}
         </div>
         <span class="lc-price">${esc(t.price)} ${currencyLabel(t.currency)}</span>
       </div>
@@ -1519,6 +1538,7 @@ function drawTravelerTrips() {
         <span>${ICONS.users} ${esc(t.seats_available)} مقعد متاح</span>
         ${t.vehicle_type ? `<span>${ICONS.bus} ${esc(t.vehicle_type)}</span>` : ''}
       </div>
+      ${officeInfoHtml(office) ? `<button type="button" class="details-toggle" data-toggle-details aria-expanded="false">عرض التفاصيل</button><div class="trip-details">${officeInfoHtml(office)}</div>` : ''}
       <div class="lc-actions">
         <button class="btn btn-primary" data-book-trip="${esc(t.id)}" style="margin-top:0;">حجز مقعد</button>
         <button class="whatsapp-btn" data-contact-trip="${esc(t.id)}" style="flex:0 0 auto; width:44px;">${ICONS.whatsapp}</button>
@@ -1528,6 +1548,15 @@ function drawTravelerTrips() {
   }).join('');
   list.querySelectorAll('[data-book-trip]').forEach(btn => {
     btn.addEventListener('click', () => openBookingModal(btn.dataset.bookTrip));
+  });
+  list.querySelectorAll('[data-toggle-details]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const box = btn.nextElementSibling;
+      if (!box) return;
+      const open = box.classList.toggle('open');
+      btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+      btn.textContent = open ? 'إخفاء التفاصيل' : 'عرض التفاصيل';
+    });
   });
   list.querySelectorAll('[data-contact-trip]').forEach(btn => {
     btn.addEventListener('click', () => {
@@ -1568,12 +1597,13 @@ async function renderTravelerBookings() {
     list.innerHTML = `<div class="empty-state">${ICONS.box}<div class="mt-2">لا توجد حجوزات بعد</div></div>`;
     return;
   }
-  const items = (await Promise.all(bookings.slice().reverse().map(async (b) => {
-    const trip = await UbourDB.getTripById(b.trip_id);
+  const tripsMap = await UbourDB.getTripsByIds(bookings.map((b) => b.trip_id));
+  const officesMap = await UbourDB.getProfilesByIds(Object.values(tripsMap).map((t) => t.office_id));
+  const items = bookings.slice().reverse().map((b) => {
+    const trip = tripsMap[b.trip_id];
     if (!trip) return null;
-    const office = await UbourDB.getProfileById(trip.office_id);
-    return { b, trip, office };
-  }))).filter(Boolean);
+    return { b, trip, office: officesMap[trip.office_id] || null };
+  }).filter(Boolean);
   const ratings = await UbourDB.getOfficeRatings(Array.from(new Set(items.map(x => x.trip.office_id))));
   const myReviews = await UbourDB.getMyReviews();
 
@@ -1944,7 +1974,8 @@ async function renderOfficeRequests(office) {
   // تُستبعد طلبات أي رحلة أُلغيت بالكامل من قائمة الطلبات النشطة (حُذفت "من خانة الطلبات")
   const allBookings = await UbourDB.getBookingsForOffice(office.id);
   const bookings = allBookings.filter(b => b.trips && b.trips.office_id === office.id);
-  const withTrips = await Promise.all(bookings.map(async (b) => ({ b, trip: await UbourDB.getTripById(b.trip_id) })));
+  const tripsMap = await UbourDB.getTripsByIds(bookings.map((b) => b.trip_id));
+  const withTrips = bookings.map((b) => ({ b, trip: tripsMap[b.trip_id] || null }));
   const active = withTrips.filter(({ trip }) => trip && trip.status !== 'cancelled');
 
   if (!active.length) {
@@ -2609,6 +2640,8 @@ function initPWA() {
   window.addEventListener('appinstalled', () => {
     showToast('تم تثبيت التطبيق على جهازك 🎉', 'success');
   });
+  window.addEventListener('offline', () => showToast('لا يوجد اتصال بالإنترنت — بعض الميزات لن تعمل حتى يعود الاتصال', 'error', 6000));
+  window.addEventListener('online', () => showToast('عاد الاتصال بالإنترنت', 'success'));
 }
 
 /* =========================================================================
