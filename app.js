@@ -2714,6 +2714,7 @@ const InstallUI = (() => {
   const DISMISS_KEY = 'ubour_install_bar_dismissed_at';
   const DISMISS_DAYS = 7;
   const SHOW_DELAY_MS = 2500;
+  const BAR_SHOW_MS = 5000;      // مدة بقاء شريط التثبيت ظاهراً (5 ثوانٍ) ثم يختفي دون تذكّر الإغلاق
   const ICONS = {
     android: '<svg viewBox="0 0 24 24" width="26" height="26" fill="currentColor" aria-hidden="true"><path d="M6 18c0 .55.45 1 1 1h1v3.5a1.5 1.5 0 0 0 3 0V19h2v3.5a1.5 1.5 0 0 0 3 0V19h1c.55 0 1-.45 1-1V8H6v10zM3.5 8A1.5 1.5 0 0 0 2 9.5v7a1.5 1.5 0 0 0 3 0v-7A1.5 1.5 0 0 0 3.5 8zm17 0A1.5 1.5 0 0 0 19 9.5v7a1.5 1.5 0 0 0 3 0v-7A1.5 1.5 0 0 0 20.5 8zM15.53 2.16l1.3-1.3a.5.5 0 0 0-.71-.71l-1.48 1.48A5.98 5.98 0 0 0 12 1c-.96 0-1.86.23-2.66.63L7.85.15a.5.5 0 0 0-.7.71l1.3 1.3A5.99 5.99 0 0 0 6 7h12a5.99 5.99 0 0 0-2.47-4.84zM10 5H9V4h1v1zm5 0h-1V4h1v1z"/></svg>',
     phone: '<svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="6" y="2" width="12" height="20" rx="3"/><path d="M11 18h2"/></svg>',
@@ -2732,6 +2733,8 @@ const InstallUI = (() => {
   let ready = false;      // بعد مرور SHOW_DELAY_MS لا نُظهر الشريط فجأة مع تحميل الصفحة
   let bar = null;
   let sheet = null;
+  let barTimer = null;
+  let barAutoHidden = false;
 
   function standalone() {
     try {
@@ -2805,7 +2808,12 @@ const InstallUI = (() => {
     if (g.note) panel.appendChild(el('div', 'is-note', g.note));
     const actions = el('div', 'is-actions');
     if (g.copy) { const c = el('button', null, 'نسخ الرابط'); c.type = 'button'; c.addEventListener('click', copyLink); actions.appendChild(c); }
-    const ok = el('button', 'primary', 'فهمت'); ok.type = 'button'; ok.addEventListener('click', closeSheet);
+    if (deferredPrompt) {
+      const inst = el('button', 'primary', 'تثبيت'); inst.type = 'button';
+      inst.addEventListener('click', () => { closeSheet(); promptInstall(); });
+      actions.appendChild(inst);
+    }
+    const ok = el('button', deferredPrompt ? null : 'primary', 'فهمت'); ok.type = 'button'; ok.addEventListener('click', closeSheet);
     actions.appendChild(ok);
     panel.appendChild(actions);
     sheet.appendChild(panel);
@@ -2826,7 +2834,7 @@ const InstallUI = (() => {
     if (bar) return bar;
     bar = el('div'); bar.id = 'install-bar'; bar.setAttribute('role', 'region'); bar.setAttribute('aria-label', 'تثبيت التطبيق');
     const inner = el('div', 'ib-inner');
-    const icon = el('div', 'ib-icon'); const img = document.createElement('img'); img.src = 'icons/icon-192.png'; img.alt = ''; icon.appendChild(img);
+    const icon = el('div', 'ib-icon'); const img = document.createElement('img'); img.src = 'icon-192.png'; img.alt = ''; icon.appendChild(img);
     const txt = el('div', 'ib-text'); txt.appendChild(el('div', 'ib-title', 'ثبّت تطبيق عبور على هاتفك')); const sub = el('div', 'ib-sub'); sub.setAttribute('data-ib-sub', ''); txt.appendChild(sub);
     const act = el('button', 'ib-action'); act.type = 'button'; act.setAttribute('data-ib-action', ''); act.addEventListener('click', promptInstall);
     const close = el('button', 'ib-close', '✕'); close.type = 'button'; close.setAttribute('aria-label', 'إغلاق');
@@ -2893,12 +2901,16 @@ const InstallUI = (() => {
   function refresh() {
     renderCards();
     const eligible = ready && isMobile && !standalone() && !installed && !dismissedRecently();
-    if (!eligible) { if (bar) bar.classList.remove('show'); return; }
+    if (!eligible || barAutoHidden) { if (bar) bar.classList.remove('show'); return; }
     const b = ensureBar();
     const oneTap = isAndroid && !!deferredPrompt;
     b.querySelector('[data-ib-sub]').textContent = oneTap ? 'وصول أسرع وبملء الشاشة' : (isIOS ? 'خطوات بسيطة من Safari' : 'خطوات بسيطة من المتصفح');
     b.querySelector('[data-ib-action]').textContent = oneTap ? 'تثبيت' : 'كيف؟';
+    const wasShown = b.classList.contains('show');
     b.classList.add('show');
+    if (!wasShown && !barTimer) {
+      barTimer = setTimeout(() => { barAutoHidden = true; if (bar) bar.classList.remove('show'); }, BAR_SHOW_MS);
+    }
   }
 
   window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); deferredPrompt = e; refresh(); });
@@ -3042,7 +3054,7 @@ const NotifUI = (() => {
   function deviceNotify(n) {
     try {
       if (!('Notification' in window) || Notification.permission !== 'granted' || !document.hidden) return;
-      const opts = { body: n.body || '', icon: 'icons/icon-192.png', tag: n.id, lang: 'ar', dir: 'rtl' };
+      const opts = { body: n.body || '', icon: 'icon-192.png', tag: n.id, lang: 'ar', dir: 'rtl' };
       if (navigator.serviceWorker && navigator.serviceWorker.ready) {
         navigator.serviceWorker.ready.then((reg) => reg.showNotification(n.title, opts)).catch(() => { new Notification(n.title, opts); });
       } else { new Notification(n.title, opts); }

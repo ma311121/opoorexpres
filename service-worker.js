@@ -5,7 +5,7 @@
    • الطلبات الخارجية (Supabase وCDN) لا يتدخل فيها نهائياً — لا تُخزَّن بيانات المستخدمين.
    عند أي تحديث للملفات غيّر CACHE_VERSION.
    ========================================================================= */
-const CACHE_VERSION = 'ubour-v5.4.0';
+const CACHE_VERSION = 'ubour-v5.4.1';
 
 const APP_SHELL = [
   './',
@@ -15,10 +15,10 @@ const APP_SHELL = [
   './privacy.html',
   './terms.html',
   './manifest.json',
-  './icons/icon-192.png',
-  './icons/icon-512.png',
-  './icons/logo-mark.png',
-  './icons/logo-full.png'
+  './icon-192.png',
+  './icon-512.png',
+  './logo-mark.png',
+  './logo-full.png'
 ];
 
 self.addEventListener('install', (event) => {
@@ -96,8 +96,8 @@ self.addEventListener('push', (event) => {
   const title = data.title || 'عبور إكسبريس';
   event.waitUntil(self.registration.showNotification(title, {
     body: data.body || '',
-    icon: 'icons/icon-192.png',
-    badge: 'icons/icon-192.png',
+    icon: 'icon-192.png',
+    badge: 'icon-192.png',
     tag: data.tag || undefined,       // نفس معرّف التنبيه الداخلي: لا تكرار عند وصول الاثنين
     lang: 'ar', dir: 'rtl',
     data: { url: data.url || './' }
