@@ -1260,6 +1260,15 @@ button, a, .nav-item { touch-action: manipulation; }
 
 /* v5.5 — بحث المكاتب */
 .office-search { margin-bottom: 12px; }
+
+/* v5.5 — بطاقة من نحن */
+.about-card { background: var(--navy-800); border: 1px solid var(--navy-border); border-radius: 16px; padding: 14px 16px; margin: 0 0 14px; }
+.about-card h3 { color: var(--gold-400); font-size: 16px; margin: 0 0 6px; }
+.about-card p { font-size: 13.5px; line-height: 1.9; margin: 0 0 8px; opacity: .9; }
+.about-card ul { margin: 0; padding-inline-start: 18px; }
+.about-card li { font-size: 13.5px; line-height: 1.9; opacity: .9; }
+
+.about-card h4 { color: var(--gold-400); font-size: 14px; margin: 10px 0 4px; }
 </style>
 </head>
 <body>
@@ -1484,6 +1493,11 @@ button, a, .nav-item { touch-action: manipulation; }
           <span class="input-icon" id="icon-reset-lock"></span>
           <input type="password" id="input-reset-password" autocomplete="new-password" placeholder="••••••••">
         </div>
+      </div>
+      <div class="field">
+        <label for="input-reset-password-confirm">تأكيد كلمة السر</label>
+        <div class="input-wrap"><input type="password" id="input-reset-password-confirm" autocomplete="new-password" placeholder="••••••••"></div>
+        <div class="hint" style="margin-top:6px;font-size:12px;opacity:.75;">8 خانات على الأقل، حروف وأرقام</div>
         <div class="field-error" id="error-reset-password"></div>
       </div>
       <button class="btn btn-primary" id="btn-reset-password-submit">
@@ -1619,6 +1633,21 @@ button, a, .nav-item { touch-action: manipulation; }
             <p>فريق عبور إكسبريس بجانبك دائماً. نرحّب بملاحظاتك واقتراحاتك وبلاغاتك بصدر رحب، فكل رسالة منك تساعدنا على تطوير الخدمة وجعلها أفضل لك. تواصل معنا مباشرة عبر واتساب وسنردّ عليك في أقرب وقت.</p>
             <button type="button" class="whatsapp-btn" data-support-whatsapp><span>تواصل مع الإدارة عبر واتساب</span></button>
           </div>
+          <div class="about-card">
+            <h3>من نحن</h3>
+            <p>عبور إكسبريس منصة تربط المسافرين بمكاتب النقل والسائقين داخل اليمن وإلى السعودية. فكرتنا بسيطة: أن تجد رحلتك وتحجز مقعدك وتتواصل مع المكتب من مكان واحد، فيقصر الطريق عليك قبل أن تسافر.</p>
+            <h4>لماذا عبور؟</h4>
+            <ul>
+              <li>رحلات المكاتب والسائقين في مكان واحد، وابحث بالوجهة والتاريخ.</li>
+              <li>أسعار واضحة بالريال السعودي أو اليمني.</li>
+              <li>احجز مقعدك في دقائق وتابع حالة حجزك.</li>
+              <li>تنبيهات على جوالك عند التأكيد أو التحديث.</li>
+              <li>تواصل مباشر عبر واتساب، وتظهر أرقام المكتب بعد تأكيد حجزك.</li>
+              <li>تقييمات المسافرين لتختار بثقة، ومجاني للمسافر بلا عمولة.</li>
+            </ul>
+            <h4>للمكاتب والسائقين</h4>
+            <p>انشر رحلاتك بأسعارها ومواعيدها، وأدر طلبات الحجز بالتأكيد أو الرفض، وتابع مقاعدك المتاحة من حساب واحد.</p>
+          </div>
           <div class="field">
             <label for="input-support-message">كيف يمكننا مساعدتك؟</label>
             <div class="input-wrap"><input type="text" id="input-support-message" placeholder="اكتب رسالتك هنا..."></div>
@@ -1676,6 +1705,12 @@ button, a, .nav-item { touch-action: manipulation; }
   <section id="screen-office" class="screen">
     <div class="home-scroll">
 
+      <div id="office-status-banner" class="hidden" role="alert" style="margin: var(--space-4) var(--space-5) 0; padding: var(--space-4); background: rgba(239,90,95,0.08); border: 1px solid var(--error); border-radius: var(--radius-md);">
+        <p id="office-status-title" style="font-size:14px; font-weight:800; color:var(--error); margin:0 0 4px;"></p>
+        <p id="office-status-text" style="font-size:13px; line-height:1.8; margin:0 0 10px;"></p>
+        <button type="button" class="whatsapp-btn" data-support-whatsapp style="width:100%;"><span>تواصل مع الإدارة عبر واتساب</span></button>
+      </div>
+
       <div id="office-view-requests" class="home-view">
         <div class="home-header">
           <div class="greeting">
@@ -1706,6 +1741,21 @@ button, a, .nav-item { touch-action: manipulation; }
             <div class="sw-title">يسعدنا خدمتك 🌟</div>
             <p>فريق عبور إكسبريس بجانبك دائماً. نرحّب بملاحظاتك واقتراحاتك وبلاغاتك بصدر رحب، فكل رسالة منك تساعدنا على تطوير الخدمة وجعلها أفضل لك. تواصل معنا مباشرة عبر واتساب وسنردّ عليك في أقرب وقت.</p>
             <button type="button" class="whatsapp-btn" data-support-whatsapp><span>تواصل مع الإدارة عبر واتساب</span></button>
+          </div>
+          <div class="about-card">
+            <h3>من نحن</h3>
+            <p>عبور إكسبريس منصة تربط المسافرين بمكاتب النقل والسائقين داخل اليمن وإلى السعودية. فكرتنا بسيطة: أن تجد رحلتك وتحجز مقعدك وتتواصل مع المكتب من مكان واحد، فيقصر الطريق عليك قبل أن تسافر.</p>
+            <h4>لماذا عبور؟</h4>
+            <ul>
+              <li>رحلات المكاتب والسائقين في مكان واحد، وابحث بالوجهة والتاريخ.</li>
+              <li>أسعار واضحة بالريال السعودي أو اليمني.</li>
+              <li>احجز مقعدك في دقائق وتابع حالة حجزك.</li>
+              <li>تنبيهات على جوالك عند التأكيد أو التحديث.</li>
+              <li>تواصل مباشر عبر واتساب، وتظهر أرقام المكتب بعد تأكيد حجزك.</li>
+              <li>تقييمات المسافرين لتختار بثقة، ومجاني للمسافر بلا عمولة.</li>
+            </ul>
+            <h4>للمكاتب والسائقين</h4>
+            <p>انشر رحلاتك بأسعارها ومواعيدها، وأدر طلبات الحجز بالتأكيد أو الرفض، وتابع مقاعدك المتاحة من حساب واحد.</p>
           </div>
           <div class="field">
             <label for="input-office-support-message">كيف يمكننا مساعدتك؟</label>
@@ -1996,6 +2046,62 @@ button, a, .nav-item { touch-action: manipulation; }
       <button class="btn btn-primary" id="btn-submit-cancel" style="background:linear-gradient(135deg, var(--error), #b03337); box-shadow:none;">
         <span class="btn-label">تأكيد الإلغاء وإرسال السبب</span><span class="spinner"></span>
       </button>
+      <button class="btn btn-text" data-close-modal style="margin-top:10px;">تراجع</button>
+    </div>
+  </div>
+
+  <!-- v5.5 — نوافذ إدارة المكاتب (تجديد / تعديل / حذف) -->
+  <div class="modal-overlay" id="modal-admin-renew">
+    <div class="modal-sheet">
+      <div class="modal-handle"></div>
+      <h3 id="renew-office-name">تجديد الاشتراك</h3>
+      <div class="lc-sub" id="renew-current" style="margin-bottom:10px;"></div>
+      <div class="field">
+        <label for="input-renew-days">عدد الأيام</label>
+        <div class="input-wrap"><input type="text" inputmode="numeric" maxlength="4" id="input-renew-days" placeholder="مثال: 45" autocomplete="off"></div>
+      </div>
+      <div class="field">
+        <label for="input-renew-date">أو اختر تاريخ الانتهاء</label>
+        <div class="input-wrap"><input type="date" id="input-renew-date"></div>
+      </div>
+      <div class="lc-sub" id="renew-preview" style="font-weight:700; margin-bottom:6px;"></div>
+      <div class="field-error" id="error-renew"></div>
+      <button class="btn btn-primary" id="btn-renew-confirm"><span class="btn-label">موافق / تجديد</span><span class="spinner"></span></button>
+      <button class="btn btn-text" data-close-modal style="margin-top:10px;">تراجع</button>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="modal-admin-edit-office">
+    <div class="modal-sheet">
+      <div class="modal-handle"></div>
+      <h3>تعديل بيانات المكتب / السائق</h3>
+      <div class="field"><label for="input-admin-edit-name">الاسم</label>
+        <div class="input-wrap"><input type="text" id="input-admin-edit-name" maxlength="80"></div></div>
+      <div class="field"><label for="input-admin-edit-address">الموقع / العنوان</label>
+        <div class="input-wrap"><input type="text" id="input-admin-edit-address" maxlength="200"></div></div>
+      <div class="field"><label for="input-admin-edit-phone1">رقم التواصل / واتساب</label>
+        <div class="input-wrap"><input type="tel" id="input-admin-edit-phone1" inputmode="tel" placeholder="7XXXXXXXX أو 05XXXXXXXX"></div></div>
+      <div class="field"><label for="input-admin-edit-phone2">رقم تواصل إضافي (اختياري)</label>
+        <div class="input-wrap"><input type="tel" id="input-admin-edit-phone2" inputmode="tel"></div></div>
+      <div class="field"><label for="input-admin-edit-logo">الشعار</label>
+        <img id="admin-edit-logo-preview" class="hidden" alt="" style="width:64px;height:64px;border-radius:50%;object-fit:cover;display:block;margin-bottom:8px;">
+        <div class="input-wrap"><input type="file" id="input-admin-edit-logo" accept="image/*"></div></div>
+      <button class="btn btn-primary" id="btn-admin-edit-save"><span class="btn-label">حفظ التعديلات</span><span class="spinner"></span></button>
+      <button class="btn btn-text" data-close-modal style="margin-top:10px;">تراجع</button>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="modal-admin-delete-office">
+    <div class="modal-sheet">
+      <div class="modal-handle"></div>
+      <h3 id="manage-office-title">إدارة الحساب</h3>
+      <p style="line-height:1.9; margin:0 0 10px;"><b>التعطيل:</b> يُخفي رحلاته الجارية عن المسافرين ويمنعه من نشر رحلات جديدة، وتظهر له في حسابه رسالة تطلب منه مراجعة الإدارة. تبقى بياناته وحجوزاته محفوظة ويمكنك إعادة تفعيله لاحقاً.</p>
+      <button class="btn btn-ghost" id="btn-office-disable"><span class="btn-label" id="btn-office-disable-label">تعطيل الحساب</span><span class="spinner"></span></button>
+      <hr style="border:none; border-top:1px solid var(--navy-border); margin:16px 0;">
+      <p id="delete-office-text" style="line-height:1.9; margin:0 0 10px;"></p>
+      <div class="field"><label for="input-delete-confirm">للحذف النهائي اكتب كلمة «حذف»</label>
+        <div class="input-wrap"><input type="text" id="input-delete-confirm" autocomplete="off" placeholder="حذف"></div></div>
+      <button class="btn btn-primary" id="btn-delete-confirm" disabled style="background:linear-gradient(135deg, var(--error), #b03337); box-shadow:none;"><span class="btn-label">حذف نهائي</span><span class="spinner"></span></button>
       <button class="btn btn-text" data-close-modal style="margin-top:10px;">تراجع</button>
     </div>
   </div>

@@ -1180,36 +1180,71 @@ function initForgotPasswordScreen() {
   });
 }
 
+function showResetLinkExpired() {
+  _recoveryMode = false;
+  try { history.replaceState(null, '', window.location.pathname); } catch (e) { /* تجاهل */ }
+  showScreen('screen-forgot-password', { replace: true });
+  const er = document.getElementById('error-forgot-email');
+  if (er) { er.textContent = 'رابط الاستعادة منتهي الصلاحية أو سبق استخدامه. أدخل رقم جوالك لطلب رابط جديد.'; er.classList.add('show'); }
+  showToast('رابط الاستعادة غير صالح — اطلب رابطاً جديداً', 'error', 6000);
+}
+
 function initResetPasswordScreen() {
   const pwInput = document.getElementById('input-reset-password');
+  const pwConfirm = document.getElementById('input-reset-password-confirm');
   const errorEl = document.getElementById('error-reset-password');
   const btn = document.getElementById('btn-reset-password-submit');
 
-  document.getElementById('btn-reset-password-back').addEventListener('click', () => {
+  async function leaveRecovery() {
+    _recoveryMode = false;
+    _currentProfileCache = null;
+    try { history.replaceState(null, '', window.location.pathname); } catch (e) { /* تجاهل */ }
+    try { await supabaseClient.auth.signOut({ scope: 'global' }); } catch (e) { /* تجاهل */ }
+  }
+
+  document.getElementById('btn-reset-password-back').addEventListener('click', async () => {
+    await leaveRecovery();
     showScreen('screen-login', { replace: true });
   });
 
-  btn.addEventListener('click', async () => {
+  async function submit() {
     errorEl.classList.remove('show');
-    if (pwInput.value.length < 8) {
-      errorEl.textContent = 'كلمة السر يجب ألا تقل عن 8 أحرف';
+    const pw = pwInput.value;
+    if (pw.length < 8 || !/\d/.test(pw) || !/[A-Za-z\u0600-\u06FF]/.test(pw)) {
+      errorEl.textContent = 'كلمة السر يجب ألا تقل عن 8 خانات وتحتوي حروفاً وأرقاماً';
       errorEl.classList.add('show');
       return;
     }
+    if (pw !== pwConfirm.value) {
+      errorEl.textContent = 'كلمتا السر غير متطابقتين';
+      errorEl.classList.add('show');
+      return;
+    }
+    // لا توجد جلسة استعادة صالحة = الرابط منتهٍ أو مستخدَم سابقاً
+    const cur = await supabaseClient.auth.getSession();
+    if (!cur || !cur.data || !cur.data.session) { showResetLinkExpired(); return; }
+
     btn.classList.add('loading');
     btn.disabled = true;
-    const result = await UbourAuth.updatePasswordAfterReset(pwInput.value);
+    const result = await UbourAuth.updatePasswordAfterReset(pw);
     btn.classList.remove('loading');
     btn.disabled = false;
 
     if (!result.ok) {
-      errorEl.textContent = 'تعذّر حفظ كلمة السر، حاول مجدداً';
+      const m = String(result.error || '');
+      if (/same|different/i.test(m)) errorEl.textContent = 'اختر كلمة سر مختلفة عن كلمة السر السابقة';
+      else if (/expired|invalid|session|jwt/i.test(m)) { showResetLinkExpired(); return; }
+      else errorEl.textContent = 'تعذّر حفظ كلمة السر، حاول مجدداً';
       errorEl.classList.add('show');
       return;
     }
-    showToast('تم تحديث كلمة السر بنجاح', 'success');
-    await routeUserAfterAuth();
-  });
+    pwInput.value = ''; pwConfirm.value = '';
+    await leaveRecovery();   // إلغاء كل الجلسات القديمة والحالية — لا دخول تلقائي
+    showScreen('screen-login', { replace: true });
+    showToast('تم تغيير كلمة السر بنجاح، يرجى تسجيل الدخول بكلمة السر الجديدة', 'success', 6000);
+  }
+  btn.addEventListener('click', submit);
+  pwConfirm.addEventListener('keydown', (e) => { if (e.key === 'Enter') submit(); });
 }
 
 /* ---------------- أدوات مشتركة ---------------- */
@@ -1351,7 +1386,10 @@ function closeModals() {
 }
 
 /* ---------------- التوجيه بعد الدخول/التسجيل حسب الدور ---------------- */
+let _recoveryMode = false;   // true أثناء فتح رابط استعادة كلمة السر: يُمنع دخول التطبيق قبل تعيين كلمة سر جديدة
+
 async function routeUserAfterAuth() {
+  if (_recoveryMode) { showScreen('screen-reset-password', { replace: true }); return; }
   const profile = await UbourDB.getCurrentProfile();
   if (!profile) { showScreen('screen-login', { replace: true }); return; }
 
@@ -1620,7 +1658,7 @@ async function renderTravelerBookings() {
   const officesMap = await UbourDB.getProfilesByIds(Object.values(tripsMap).map((t) => t.office_id));
   const items = bookings.slice().reverse().map((b) => {
     const trip = tripsMap[b.trip_id];
-    if (!trip) return null;
+    if (!trip || isPastRetention(trip)) return null;
     return { b, trip, office: officesMap[trip.office_id] || null };
   }).filter(Boolean);
   const ratings = await UbourDB.getOfficeRatings(Array.from(new Set(items.map(x => x.trip.office_id))));
@@ -1942,8 +1980,20 @@ async function renderOfficeScreen() {
   const days = UbourDB.daysRemaining(office);
   const subActive = office.subscription_active && days > 0;
   document.getElementById('office-profile-subscription').textContent =
-    subActive ? `فعّال (${days} يوم متبقي)` : 'منتهي';
-  document.getElementById('subscription-renew-box').classList.toggle('hidden', subActive);
+    office.is_disabled ? 'معطّل — راجع الإدارة' : (subActive ? `فعّال (${days} يوم متبقي)` : 'منتهي');
+  document.getElementById('subscription-renew-box').classList.toggle('hidden', subActive || !!office.is_disabled);
+
+  // رسالة حالة الحساب أعلى كل صفحات المكتب/السائق: معطّل من الإدارة أو منتهي الاشتراك
+  const banner = document.getElementById('office-status-banner');
+  if (office.is_disabled || !subActive) {
+    document.getElementById('office-status-title').textContent = office.is_disabled ? 'تم تعطيل حسابك' : 'انتهى اشتراكك';
+    document.getElementById('office-status-text').textContent = office.is_disabled
+      ? 'رحلاتك غير ظاهرة للمسافرين ولا يمكنك نشر رحلات جديدة. يرجى مراجعة الإدارة لمعرفة السبب وإعادة تفعيل الحساب.'
+      : 'رحلاتك لن تظهر للمسافرين ولا يمكنك نشر رحلات جديدة. يرجى مراجعة الإدارة لتجديد الاشتراك.';
+    banner.classList.remove('hidden');
+  } else {
+    banner.classList.add('hidden');
+  }
 
   document.getElementById('input-office-edit-name').value = office.name || '';
   document.getElementById('input-office-edit-location').value = office.address || '';
@@ -1990,7 +2040,13 @@ function renderOfficeAvatar(office) {
 }
 
 /* ---- بحث المكاتب/السائقين في رحلاتهم وطلباتهم ---- */
-const _officeSearch = { trips: '', requests: '' };
+const _officeSearch = { trips: '', requests: '', admin: '' };
+const RETENTION_DAYS = 10;   // لا تُعرض رحلة/حجز مضى على موعدها أكثر من 10 أيام (والأرشفة الفعلية في قاعدة البيانات)
+function isPastRetention(t) {
+  if (!t || !t.trip_date) return false;
+  const ts = Date.parse(t.trip_date + 'T' + String(t.trip_time || '00:00:00').slice(0, 8) + '+03:00');
+  return !isNaN(ts) && ts < Date.now() - RETENTION_DAYS * 86400000;
+}
 let _officeTripsCache = null, _officeReqCache = null;
 function _norm(x) { return String(x == null ? '' : x).toLowerCase(); }
 function ensureOfficeSearch(list, key, placeholder, redraw) {
@@ -2015,7 +2071,7 @@ async function renderOfficeRequests(office, cached) {
     const bookings = allBookings.filter(b => b.trips && b.trips.office_id === office.id);
     const tripsMap = await UbourDB.getTripsByIds(bookings.map((b) => b.trip_id));
     const withTrips = bookings.map((b) => ({ b, trip: tripsMap[b.trip_id] || null }));
-    active = withTrips.filter(({ trip }) => trip && trip.status !== 'cancelled');
+    active = withTrips.filter(({ trip }) => trip && trip.status !== 'cancelled' && !isPastRetention(trip));
     _officeReqCache = active;
   }
 
@@ -2111,7 +2167,7 @@ async function renderOfficeTrips(office, cached) {
     trips = _officeTripsCache;
   } else {
     showSkeleton(list, 3);
-    trips = await UbourDB.getTripsByOffice(office.id);
+    trips = (await UbourDB.getTripsByOffice(office.id)).filter(t => !isPastRetention(t));
     _officeTripsCache = trips;
   }
   if (!trips.length) {
@@ -2224,6 +2280,11 @@ function initOfficeScreen() {
   });
 
   document.getElementById('btn-open-add-trip').addEventListener('click', () => {
+    const me = _currentProfileCache;
+    if (me && (me.is_disabled || !(me.subscription_active && UbourDB.daysRemaining(me) > 0))) {
+      showToast(me.is_disabled ? 'حسابك معطّل — يرجى مراجعة الإدارة' : 'انتهى اشتراكك — يرجى تجديد الاشتراك بمراجعة الإدارة', 'error', 6000);
+      return;
+    }
     _editingTrip = null;
     _setTripModalMode(false);
     _TRIP_FIELD_IDS.forEach(id => document.getElementById(id).value = '');
@@ -2465,7 +2526,7 @@ function buildDonutChart(counts, total) {
 
 async function renderAdminTrips() {
   const list = document.getElementById('admin-trips-list');
-  const trips = await UbourDB.getAllTrips(); // يعيد بيانات المكتب مضمَّنة (office) — بلا استعلامات N+1
+  const trips = (await UbourDB.getAllTrips()).filter(t => !isPastRetention(t)); // يعيد بيانات المكتب مضمَّنة (office) — بلا استعلامات N+1
   if (!trips.length) { list.innerHTML = `<div class="empty-state">${ICONS.route}<div class="mt-2">لا توجد رحلات</div></div>`; return; }
 
   list.innerHTML = trips.slice().reverse().map(t => {
@@ -2494,31 +2555,196 @@ async function renderAdminTrips() {
   });
 }
 
-async function renderAdminOffices() {
+/* ---- إدارة المكاتب: بحث + تجديد مرن + تعديل + حذف ---- */
+let _adminOfficesCache = null, _adminToolsReady = false, _renewCtx = null, _editCtx = null, _deleteCtx = null, _editLogoDataUrl = null;
+function fmtDMY(d) { const x = new Date(d); return String(x.getDate()).padStart(2, '0') + '/' + String(x.getMonth() + 1).padStart(2, '0') + '/' + x.getFullYear(); }
+function toInputDate(d) { const x = new Date(d); return x.getFullYear() + '-' + String(x.getMonth() + 1).padStart(2, '0') + '-' + String(x.getDate()).padStart(2, '0'); }
+function openOverlay(id) { closeModals(); document.getElementById(id).classList.add('active'); }
+function fileToLogoDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onerror = reject;
+    r.onload = (ev) => {
+      const img = new Image();
+      img.onerror = reject;
+      img.onload = () => {
+        const maxDim = 480; let w = img.width, hh = img.height;
+        if (w > hh && w > maxDim) { hh = Math.round(hh * maxDim / w); w = maxDim; }
+        else if (hh > maxDim) { w = Math.round(w * maxDim / hh); hh = maxDim; }
+        const c = document.createElement('canvas'); c.width = w; c.height = hh;
+        c.getContext('2d').drawImage(img, 0, 0, w, hh);
+        resolve(c.toDataURL('image/jpeg', 0.85));
+      };
+      img.src = ev.target.result;
+    };
+    r.readAsDataURL(file);
+  });
+}
+
+function initAdminOfficeTools() {
+  if (_adminToolsReady) return;
+  _adminToolsReady = true;
+  const $ = (id) => document.getElementById(id);
+
+  // ---- التجديد ----
+  function renewSync(from) {
+    const ctx = _renewCtx; if (!ctx) return;
+    const daysEl = $('input-renew-days'), dateEl = $('input-renew-date'), prev = $('renew-preview');
+    $('error-renew').classList.remove('show');
+    if (from === 'days') {
+      const n = parseInt(daysEl.value, 10);
+      if (!n || n < 1) { dateEl.value = ''; prev.textContent = ''; return; }
+      const d = ctx.base + n * 86400000;
+      dateEl.value = toInputDate(d);
+      prev.textContent = 'ينتهي الاشتراك في ' + fmtDMY(d) + ' (' + n + ' يوم)';
+    } else {
+      if (!dateEl.value) { daysEl.value = ''; prev.textContent = ''; return; }
+      const sod = new Date(ctx.base); sod.setHours(0, 0, 0, 0);
+      const n = Math.round((new Date(dateEl.value + 'T00:00:00') - sod) / 86400000);
+      daysEl.value = n > 0 ? String(n) : '';
+      prev.textContent = n > 0 ? ('ينتهي الاشتراك في ' + fmtDMY(ctx.base + n * 86400000) + ' (' + n + ' يوم)') : 'اختر تاريخاً بعد تاريخ البدء';
+    }
+  }
+  $('input-renew-days').addEventListener('input', () => renewSync('days'));
+  $('input-renew-date').addEventListener('input', () => renewSync('date'));
+  $('btn-renew-confirm').addEventListener('click', async () => {
+    const ctx = _renewCtx; if (!ctx) return;
+    const n = parseInt($('input-renew-days').value, 10);
+    if (!n || n < 1 || n > 3650) { const er = $('error-renew'); er.textContent = 'أدخل عدد أيام صحيحاً (من 1 إلى 3650) أو اختر تاريخاً'; er.classList.add('show'); return; }
+    const expiry = new Date(ctx.base + n * 86400000);
+    const btn = $('btn-renew-confirm'); btn.classList.add('loading'); btn.disabled = true;
+    try {
+      await UbourDB.updateOffice(ctx.id, { subscription_expiry: expiry.toISOString(), subscription_active: true });
+      closeModals();
+      showToast('تم تجديد اشتراك ' + ctx.name + ' بنجاح حتى ' + fmtDMY(expiry), 'success', 6000);
+      await renderAdminOffices();
+    } catch (e) { console.error(e); showToast('تعذّر تجديد الاشتراك', 'error'); }
+    btn.classList.remove('loading'); btn.disabled = false;
+  });
+
+  // ---- التعديل ----
+  $('input-admin-edit-logo').addEventListener('change', async (e) => {
+    const f = e.target.files && e.target.files[0];
+    if (!f) return;
+    if (!/^image\//.test(f.type)) { showToast('اختر ملف صورة', 'error'); return; }
+    try { _editLogoDataUrl = await fileToLogoDataUrl(f); $('admin-edit-logo-preview').src = _editLogoDataUrl; $('admin-edit-logo-preview').classList.remove('hidden'); }
+    catch (err) { showToast('تعذّر قراءة الصورة', 'error'); }
+  });
+  $('btn-admin-edit-save').addEventListener('click', async () => {
+    const ctx = _editCtx; if (!ctx) return;
+    const name = $('input-admin-edit-name').value.trim();
+    if (!name) { showToast('يرجى إدخال الاسم', 'error'); return; }
+    const p1 = $('input-admin-edit-phone1').value.trim(), p2 = $('input-admin-edit-phone2').value.trim();
+    let c1 = null, c2 = null;
+    if (p1) { const r1 = UbourAuth.detectPhone(p1); if (!r1.valid) { showToast('رقم التواصل الأول غير صحيح', 'error', 5000); return; } c1 = r1.e164; }
+    if (p2) { const r2 = UbourAuth.detectPhone(p2); if (!r2.valid) { showToast('رقم التواصل الثاني غير صحيح', 'error', 5000); return; } c2 = r2.e164; }
+    const patch = { name, address: $('input-admin-edit-address').value.trim() || null, contact_phone: c1, contact_phone2: c2 };
+    if (_editLogoDataUrl) patch.logo_url = _editLogoDataUrl;
+    const btn = $('btn-admin-edit-save'); btn.classList.add('loading'); btn.disabled = true;
+    try {
+      await UbourDB.updateOffice(ctx.id, patch);
+      closeModals();
+      showToast('تم حفظ بيانات ' + name, 'success');
+      await renderAdminOffices();
+    } catch (e) { console.error(e); showToast('تعذّر حفظ التعديلات', 'error'); }
+    btn.classList.remove('loading'); btn.disabled = false;
+  });
+
+  // ---- تعطيل / إعادة تفعيل ----
+  $('btn-office-disable').addEventListener('click', async () => {
+    const ctx = _deleteCtx; if (!ctx) return;
+    const btn = $('btn-office-disable'); btn.classList.add('loading'); btn.disabled = true;
+    const target = !ctx.disabled;
+    const { error } = await supabaseClient.rpc('admin_set_office_disabled', { p_id: ctx.id, p_disabled: target });
+    btn.classList.remove('loading'); btn.disabled = false;
+    if (error) { console.error(error); showToast('تعذّر تنفيذ العملية', 'error', 5000); return; }
+    closeModals();
+    showToast(target ? ('تم تعطيل «' + ctx.name + '» — ستظهر له رسالة التعطيل في حسابه ولن تظهر رحلاته') : ('تمت إعادة تفعيل «' + ctx.name + '» — جدّد اشتراكه ليتمكن من نشر الرحلات'), 'success', 7000);
+    _adminOfficesCache = null;
+    await renderAdminOffices(); await renderAdminTrips();
+  });
+
+  // ---- الحذف النهائي ----
+  $('input-delete-confirm').addEventListener('input', () => {
+    $('btn-delete-confirm').disabled = $('input-delete-confirm').value.trim() !== 'حذف';
+  });
+  $('btn-delete-confirm').addEventListener('click', async () => {
+    const ctx = _deleteCtx; if (!ctx) return;
+    const btn = $('btn-delete-confirm'); btn.classList.add('loading'); btn.disabled = true;
+    const { error } = await supabaseClient.rpc('admin_delete_office', { p_id: ctx.id });
+    btn.classList.remove('loading');
+    if (error) { console.error(error); showToast('تعذّر حذف المكتب', 'error', 6000); btn.disabled = false; return; }
+    closeModals();
+    showToast('تم حذف المكتب «' + ctx.name + '» نهائياً', 'success', 5000);
+    _adminOfficesCache = null;
+    await renderAdminOffices(); await renderAdminOverview(); await renderAdminTrips();
+  });
+}
+
+function openRenewModal(o) {
+  initAdminOfficeTools();
+  const now = Date.now(), exp = o.subscription_expiry ? new Date(o.subscription_expiry).getTime() : 0, active = exp > now;
+  _renewCtx = { id: o.id, name: o.name, base: active ? exp : now };
+  document.getElementById('renew-office-name').textContent = 'تجديد اشتراك: ' + o.name;
+  document.getElementById('renew-current').textContent = active ? ('ينتهي حالياً في ' + fmtDMY(exp) + ' — يُضاف التمديد بعد هذا التاريخ')
+    : (exp ? ('منتهٍ منذ ' + fmtDMY(exp) + ' — يبدأ التمديد من اليوم') : 'لا يوجد اشتراك — يبدأ التمديد من اليوم');
+  document.getElementById('input-renew-days').value = ''; document.getElementById('input-renew-date').value = '';
+  document.getElementById('renew-preview').textContent = ''; document.getElementById('error-renew').classList.remove('show');
+  openOverlay('modal-admin-renew');
+}
+function openEditOfficeModal(o) {
+  initAdminOfficeTools();
+  _editCtx = { id: o.id }; _editLogoDataUrl = null;
+  document.getElementById('input-admin-edit-name').value = o.name || '';
+  document.getElementById('input-admin-edit-address').value = o.address || '';
+  document.getElementById('input-admin-edit-phone1').value = o.contact_phone || '';
+  document.getElementById('input-admin-edit-phone2').value = o.contact_phone2 || '';
+  document.getElementById('input-admin-edit-logo').value = '';
+  const pv = document.getElementById('admin-edit-logo-preview');
+  if (o.logo_url) { pv.src = o.logo_url; pv.classList.remove('hidden'); } else { pv.removeAttribute('src'); pv.classList.add('hidden'); }
+  openOverlay('modal-admin-edit-office');
+}
+function openManageOfficeModal(o) {
+  initAdminOfficeTools();
+  _deleteCtx = { id: o.id, name: o.name, disabled: !!o.is_disabled };
+  document.getElementById('manage-office-title').textContent = 'إدارة حساب: ' + o.name;
+  document.getElementById('btn-office-disable-label').textContent = o.is_disabled ? 'إعادة تفعيل الحساب' : 'تعطيل الحساب (يمكن التراجع)';
+  document.getElementById('delete-office-text').textContent = 'الحذف النهائي يزيل «' + o.name + '» مع حسابه ورحلاته وحجوزاته وتقييماته ورسائله، ولا يمكن التراجع عنه.';
+  document.getElementById('input-delete-confirm').value = '';
+  document.getElementById('btn-delete-confirm').disabled = true;
+  openOverlay('modal-admin-delete-office');
+}
+
+async function renderAdminOffices(cached) {
   const list = document.getElementById('admin-offices-list');
-  const offices = await UbourDB.getAllOffices();
+  let offices;
+  if (cached && _adminOfficesCache) offices = _adminOfficesCache;
+  else { showSkeleton(list, 3); offices = await UbourDB.getAllOffices(); _adminOfficesCache = offices; }
   if (!offices.length) { list.innerHTML = `<div class="empty-state">${ICONS.bus}<div class="mt-2">لا توجد مكاتب أو سائقون بعد</div></div>`; return; }
-  list.innerHTML = offices.slice().reverse().map(o => {
+  ensureOfficeSearch(list, 'admin', 'ابحث باسم المكتب أو السائق أو رقمه', () => renderAdminOffices(true));
+  const q = _norm(_officeSearch.admin).trim();
+  const shown = q ? offices.filter(o => _norm([o.name, o.phone, o.contact_phone, o.address].join(' ')).includes(q)) : offices;
+  if (!shown.length) { list.innerHTML = `<div class="empty-state">${ICONS.bus}<div class="mt-2">لا توجد نتائج مطابقة</div></div>`; return; }
+  const byId = {}; offices.forEach(o => { byId[o.id] = o; });
+  list.innerHTML = shown.slice().reverse().map(o => {
     const days = UbourDB.daysRemaining(o);
     return `
     <div class="list-card">
       <div class="lc-top">
         <span class="lc-title">${esc(o.name)}</span>
-        <span class="badge-pill ${days > 0 ? 'status-active' : 'status-inactive'}">${days} يوم متبقي</span>
+        ${o.is_disabled ? '<span class="badge-pill status-inactive">معطّل</span>' : `<span class="badge-pill ${days > 0 ? 'status-active' : 'status-inactive'}">${days} يوم متبقي</span>`}
       </div>
       <div class="lc-sub" style="direction:ltr; text-align:right; margin-bottom:8px;">${esc(o.phone)}</div>
-      <div class="lc-actions">
-        <button class="btn btn-ghost" data-extend-office="${esc(o.id)}" style="padding:11px; font-size:13px;">تمديد 30 يوم</button>
+      <div class="lc-actions" style="display:flex; gap:8px; flex-wrap:wrap;">
+        <button class="btn btn-primary" data-renew-office="${esc(o.id)}" style="padding:11px; font-size:13px; margin-top:0; width:auto;">تجديد الاشتراك</button>
+        <button class="btn btn-ghost" data-edit-office="${esc(o.id)}" style="padding:11px; font-size:13px;">تعديل</button>
+        <button class="btn btn-ghost" data-manage-office="${esc(o.id)}" style="padding:11px; font-size:13px; color:var(--error);">تعطيل / حذف</button>
       </div>
     </div>`;
   }).join('');
-  list.querySelectorAll('[data-extend-office]').forEach(btn => {
-    btn.addEventListener('click', async () => {
-      await UbourDB.extendOfficeSubscription(btn.dataset.extendOffice, 30);
-      await renderAdminOffices();
-      showToast('تم تمديد الاشتراك 30 يوماً', 'success');
-    });
-  });
+  list.querySelectorAll('[data-renew-office]').forEach(btn => btn.addEventListener('click', () => openRenewModal(byId[btn.dataset.renewOffice])));
+  list.querySelectorAll('[data-edit-office]').forEach(btn => btn.addEventListener('click', () => openEditOfficeModal(byId[btn.dataset.editOffice])));
+  list.querySelectorAll('[data-manage-office]').forEach(btn => btn.addEventListener('click', () => openManageOfficeModal(byId[btn.dataset.manageOffice])));
 }
 
 async function renderAdminManagers() {
@@ -2735,14 +2961,21 @@ document.addEventListener('DOMContentLoaded', async () => {
   // كلمة السر" في بريده — نعرض له شاشة تعيين كلمة سر جديدة فوراً
   supabaseClient.auth.onAuthStateChange((event) => {
     if (event === 'PASSWORD_RECOVERY') {
+      _recoveryMode = true;
       showScreen('screen-reset-password', { replace: true });
     }
   });
 
+  // نقرأ رابط الدخول مبكراً: رابط استعادة صالح (type=recovery) أو رابط به خطأ/منتهٍ
+  const _urlBits = (window.location.hash || '') + '&' + (window.location.search || '');
+  if (/type=recovery/.test(_urlBits)) _recoveryMode = true;
+  if (/error_code=|error=access_denied/.test(_urlBits)) { showResetLinkExpired(); return; }
+
   // إن كانت هناك جلسة محفوظة مسبقاً (تسجيل دخول سابق لم ينتهِ)، وجّه
   // المستخدم مباشرة للوحته الصحيحة دون المرور بشاشة الدخول مجدداً
   const session = await UbourDB.getSession();
-  if (session) await routeUserAfterAuth();
+  if (_recoveryMode) showScreen('screen-reset-password', { replace: true });
+  else if (session) await routeUserAfterAuth();
 });
 
 
