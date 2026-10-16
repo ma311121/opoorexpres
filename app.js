@@ -1586,21 +1586,24 @@ function drawTravelerTrips() {
   list.innerHTML = trips.map(t => {
     const office = t.office || {};
     const officeName = office.name || t.office_name || '';
+    const ci = t.checkin_time ? `<div class="tc-tile tc-time-ci"><small>الحضور</small><b>${esc(fmtTime12(t.checkin_time))}</b></div>` : '';
     return `
     <div class="list-card trip-card">
-      <div class="office-head">
-        ${officeAvatarHtml(office, 'lg')}
-        <div class="office-meta">
-          <div class="office-name">${esc(officeName)}</div>
-          ${ratingBadgeHtml(_ratingsMap[t.office_id])}
-        </div>
-        <span class="lc-price">${esc(t.price)} ${currencyLabel(t.currency)}</span>
+      <div class="tc-head">
+        <div class="tc-logo">${officeAvatarHtml(office, 'lg')}${starsHtml(_ratingsMap[t.office_id])}</div>
+        <div class="tc-name">${esc(officeName)}</div>
       </div>
-      <div class="lc-route">${ICONS.route}<span>${esc(t.from_place)}</span>${ICONS.chevron}<span>${esc(t.to_place)}</span></div>
-      ${tripTimesHtml(t)}
-      <div class="lc-meta">
-        <span>${ICONS.users} ${esc(t.seats_available)} مقعد متاح</span>
-        ${t.vehicle_type ? `<span>${ICONS.bus} ${esc(t.vehicle_type)}</span>` : ''}
+      <div class="tc-row">
+        <div class="tc-route">${ICONS.route}<span>${esc(t.from_place)}</span>${ICONS.chevron}<span>${esc(t.to_place)}</span></div>
+        <div class="tc-price"><strong>${esc(fmtPrice(t.price))}</strong><small>${currencyLabel(t.currency)}</small></div>
+      </div>
+      <div class="tc-times${ci ? '' : ' single'}">
+        <div class="tc-tile tc-time-dep"><small>التحرك</small><b>${esc(fmtDateAr(t.trip_date))}</b><span>${esc(fmtTime12(t.trip_time))}</span></div>
+        ${ci}
+      </div>
+      <div class="tc-info${t.vehicle_type ? '' : ' single'}">
+        <div class="tc-tile tc-seats">${ICONS.users}<div class="tc-seats-col"><span class="tc-seats-num">${esc(t.seats_available)}</span><span class="tc-seats-txt">مقعد متاح</span></div></div>
+        ${t.vehicle_type ? `<div class="tc-tile tc-veh"><small>نوع السيارة</small><b>${esc(t.vehicle_type)}</b></div>` : ''}
       </div>
       <button type="button" class="details-toggle" data-toggle-details aria-expanded="false">عرض التفاصيل</button><div class="trip-details">${officeInfoHtml(office, true)}${PHONES_AFTER_CONFIRM_HINT}</div>
       <div class="lc-actions">
@@ -1856,6 +1859,18 @@ function _isMissingDbObject(error) {
 function starsText(n) {
   const full = Math.max(0, Math.min(5, Math.round(Number(n) || 0)));
   return '★'.repeat(full) + '☆'.repeat(5 - full);
+}
+/** نجوم التقييم (تعبئة جزئية بالنسبة المئوية) + الرقم وعدد المقيّمين تحتها */
+function starsHtml(rt) {
+  const has = !!(rt && rt.count);
+  const avg = has ? Math.max(0, Math.min(5, Number(rt.avg) || 0)) : 0;
+  const label = has ? ('التقييم ' + avg.toFixed(1) + ' من 5') : 'مكتب جديد بلا تقييم بعد';
+  return '<div class="tc-rating" role="img" aria-label="' + label + '"><span class="tc-stars" style="--p:' + Math.round(avg / 5 * 100) + '%" aria-hidden="true">★★★★★</span>'
+    + (has ? '<span class="tc-rate-num"><b>' + esc(avg.toFixed(1)) + '</b> (' + esc(rt.count) + ')</span>' : '<span class="tc-rate-num tc-new">جديد</span>') + '</div>';
+}
+function fmtPrice(p) {
+  const n = Number(p);
+  return isFinite(n) ? n.toLocaleString('en-US') : String(p);
 }
 function ratingBadgeHtml(rt) {
   if (!rt || !rt.count) return '<span class="rating-badge rb-new">جديد — بلا تقييم بعد</span>';

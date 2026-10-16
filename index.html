@@ -1269,6 +1269,40 @@ button, a, .nav-item { touch-action: manipulation; }
 .about-card li { font-size: 13.5px; line-height: 1.9; opacity: .9; }
 
 .about-card h4 { color: var(--gold-400); font-size: 14px; margin: 10px 0 4px; }
+
+/* v5.6 — بطاقة الرحلة المدمجة (قائمة الرحلات المتاحة للمسافر) */
+.trip-card { padding: 12px 14px; }
+.tc-head { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
+.tc-logo { flex: 0 0 auto; width: 68px; display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.tc-logo .office-avatar-lg { width: 60px; height: 60px; border-radius: 16px; }
+.tc-name { flex: 1; min-width: 0; font-size: 18px; font-weight: 800; line-height: 1.5; color: var(--white); overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.tc-rating { display: flex; flex-direction: column; align-items: center; gap: 2px; line-height: 1.1; }
+.tc-stars { display: inline-block; direction: ltr; font-size: 15px; letter-spacing: 1px; line-height: 1; color: transparent; background: linear-gradient(90deg, #f5b73b var(--p, 0%), rgba(255,255,255,0.22) var(--p, 0%)); -webkit-background-clip: text; background-clip: text; }
+.tc-rate-num { font-size: 11px; color: var(--text-muted); white-space: nowrap; }
+.tc-rate-num b { color: var(--white); font-weight: 800; }
+.tc-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
+.tc-route { flex: 1; min-width: 0; display: flex; align-items: center; flex-wrap: wrap; gap: 6px; font-size: 15px; font-weight: 800; }
+.tc-route svg { width: 15px; height: 15px; color: var(--gold-400); flex-shrink: 0; }
+.tc-price { flex: 0 0 auto; display: flex; flex-direction: column; align-items: center; line-height: 1.2; }
+.tc-price strong { font-size: 22px; font-weight: 900; color: var(--gold-400); direction: ltr; unicode-bidi: isolate; font-variant-numeric: tabular-nums; }
+.tc-price small { font-size: 11.5px; color: var(--text-secondary); }
+.tc-times, .tc-info { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px; }
+.tc-times.single, .tc-info.single { grid-template-columns: 1fr; }
+.tc-tile { display: flex; flex-direction: column; gap: 2px; min-width: 0; padding: 8px 10px; border-radius: 12px; border: 1px solid var(--navy-border); background: rgba(255,255,255,0.04); }
+.tc-tile small { font-size: 11px; font-weight: 700; color: var(--text-muted); }
+.tc-tile b { font-size: 13px; font-weight: 800; color: var(--white); }
+.tc-tile span { font-size: 13px; font-weight: 800; color: var(--gold-400); }
+.tc-time-dep { border-color: rgba(201,161,92,0.5); background: rgba(201,161,92,0.08); }
+.tc-time-ci { border-color: rgba(22,191,173,0.45); background: rgba(22,191,173,0.08); }
+.tc-time-ci b { color: var(--teal-300); }
+.tc-seats { flex-direction: row; align-items: center; gap: 10px; }
+.tc-seats > svg { width: 24px; height: 24px; color: var(--gold-400); flex-shrink: 0; }
+.tc-seats-col { display: flex; flex-direction: column; line-height: 1.15; }
+.tc-seats .tc-seats-num { font-size: 22px; font-weight: 900; color: var(--white); font-variant-numeric: tabular-nums; }
+.tc-seats .tc-seats-txt { font-size: 11.5px; font-weight: 700; color: var(--text-secondary); }
+.tc-veh b { font-size: 14px; }
+.trip-card .details-toggle { padding: 2px 0 4px; font-size: 12.5px; }
+.trip-card .lc-actions { margin-top: 6px; }
 </style>
 </head>
 <body>
