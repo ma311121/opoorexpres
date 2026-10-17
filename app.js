@@ -581,15 +581,25 @@ const UbourDB = (() => {
     },
 
     /* ============ الإعلانات ============ */
-    async createAd({ title, desc, imageUrl, linkUrl }) {
+    async createAd({ title, desc, imageUrl, linkUrl, expiresAt }) {
       const { data, error } = await supabaseClient.from('ads')
-        .insert({ title, description: desc || '', image_url: imageUrl || '', link_url: linkUrl || '' }).select().single();
+        .insert({ title, description: desc || '', image_url: imageUrl || '', link_url: linkUrl || '', expires_at: expiresAt || null }).select().single();
       _throwIfError(error);
       return data;
     },
     async getAllAds() {
       const { data, error } = await supabaseClient.from('ads').select('*').order('created_at', { ascending: false });
       if (error) { console.error(error); return []; }
+      return data;
+    },
+    async getPublicTrips() {
+      const { data, error } = await supabaseClient.rpc('public_trips');
+      if (error) { console.error(error); return []; }
+      return (data || []).map((r) => Object.assign({}, r, { office: { name: r.office_name, logo_url: r.office_logo, featured: r.office_featured } }));
+    },
+    async promoteTrip(id, untilIso) {
+      const { data, error } = await supabaseClient.from('trips').update({ promoted_until: untilIso }).eq('id', id).select().single();
+      _throwIfError(error);
       return data;
     },
     async deleteAd(id) {
@@ -1600,6 +1610,7 @@ function drawTravelerTrips() {
     trips.sort((a, b) => dep(a) - dep(b));
   }
 
+  trips = trips.filter(isPromoted).concat(trips.filter(t => !isPromoted(t)));   // الرحلات المميزة أولاً
   const summary = document.getElementById('filter-summary');
   if (summary) summary.textContent = _tripsCache.length ? ('النتائج: ' + trips.length + ' من ' + _tripsCache.length + ' رحلة') : '';
   const clearBtn = document.getElementById('btn-clear-filters');
@@ -1614,8 +1625,8 @@ function drawTravelerTrips() {
   list.innerHTML = trips.map(t => {
     const office = t.office || {};
     return `
-    <div class="list-card trip-card">
-      ${tcHeadHtml(office, t.office_name, _ratingsMap[t.office_id])}
+    <div class="list-card trip-card${isPromoted(t) ? ' promoted' : ''}">
+      ${tcHeadHtml(office, t.office_name, _ratingsMap[t.office_id], isPromoted(t) ? '<span class="promo-badge">⭐ مميّزة</span>' : '')}
       ${tcRouteHtml(t)}
       ${tcTimesHtml(t)}
       ${tcInfoHtml(t.seats_available, 'مقعد متاح', t.vehicle_type)}
@@ -1699,6 +1710,66 @@ function initNewFeatures() {
       er.textContent = /ALERTS_LIMIT/.test(m) ? 'وصلت للحد الأقصى (5 تنبيهات) — احذف تنبيهاً لإضافة آخر' : (/duplicate|unique|23505/i.test(m) ? 'هذا التنبيه موجود مسبقاً' : 'تعذّر إضافة التنبيه، حاول مجدداً');
       er.classList.add('show');
     }
+  });
+}
+
+/* ---- وضع الزائر: تصفّح الرحلات دون تسجيل (الحجز والتواصل بعد الدخول) ---- */
+let _guestTrips = [], _guestHighlight = null, _guestText = '';
+async function showGuestTrips(highlightId) {
+  _guestHighlight = highlightId || null; _guestText = '';
+  showScreen('screen-guest', { replace: true });
+  const list = document.getElementById('guest-trips-list');
+  list.innerHTML = skeletonHtml(3);
+  _guestTrips = await UbourDB.getPublicTrips();
+  const note = document.getElementById('guest-shared-note');
+  if (_guestHighlight) {
+    note.textContent = _guestTrips.some((t) => t.id === _guestHighlight) ? '🔗 وصلتك هذه الرحلة — سجّل دخولك الآن لحجزها' : 'هذه الرحلة لم تعد متاحة، لكن تجد أدناه رحلات أخرى';
+    note.classList.remove('hidden');
+  }
+  drawGuestTrips();
+}
+function drawGuestTrips() {
+  const list = document.getElementById('guest-trips-list');
+  let trips = _guestTrips.slice();
+  const f = _guestText.trim();
+  if (f) trips = trips.filter((t) => t.from_place.includes(f) || t.to_place.includes(f));
+  trips = trips.filter(isPromoted).concat(trips.filter((t) => !isPromoted(t)));
+  if (_guestHighlight) trips = trips.filter((t) => t.id === _guestHighlight).concat(trips.filter((t) => t.id !== _guestHighlight));
+  if (!trips.length) { list.innerHTML = `<div class="empty-state">${ICONS.route}<div class="mt-2">لا توجد رحلات متاحة حالياً</div></div>`; return; }
+  list.innerHTML = trips.map((t) => {
+    const shared = t.id === _guestHighlight;
+    const rt = t.rating_count ? { avg: Number(t.rating_avg), count: t.rating_count } : null;
+    const extra = (isPromoted(t) ? '<span class="promo-badge">⭐ مميّزة</span>' : '') + (shared ? '<span class="promo-badge" style="background:rgba(22,191,173,.18);color:var(--teal-300);">🔗 الرحلة المشتركة</span>' : '');
+    return `
+    <div class="list-card trip-card${isPromoted(t) || shared ? ' promoted' : ''}">
+      ${tcHeadHtml(t.office, t.office_name, rt, extra)}
+      ${tcRouteHtml(t)}
+      ${tcTimesHtml(t)}
+      ${tcInfoHtml(t.seats_available, 'مقعد متاح', t.vehicle_type)}
+      ${t.accepts_parcels ? `<div class="tc-parcels">${ICONS.box}<span><b>يستقبل طرود</b>${t.parcels_note ? ' — ' + esc(t.parcels_note) : ''}</span></div>` : ''}
+      <div class="lc-actions">
+        <button class="btn btn-primary" data-guest-book="${esc(t.id)}" style="margin-top:0;">🔒 سجّل دخولك للحجز</button>
+        <button type="button" class="share-btn" data-share-trip="${esc(t.id)}" aria-label="مشاركة الرحلة">${ICONS.share}</button>
+      </div>
+    </div>`;
+  }).join('');
+  list.querySelectorAll('[data-guest-book]').forEach((btn) => btn.addEventListener('click', () => {
+    savePendingTrip(btn.dataset.guestBook);
+    openOverlay('modal-login-required');
+  }));
+  list.querySelectorAll('[data-share-trip]').forEach((btn) => btn.addEventListener('click', () => {
+    const t = _guestTrips.find((x) => x.id === btn.dataset.shareTrip);
+    if (t) shareTrip(t, t.office_name);
+  }));
+}
+function initGuestMode() {
+  const search = document.getElementById('input-guest-search');
+  if (search) search.addEventListener('input', () => { _guestText = search.value; drawGuestTrips(); });
+  document.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-guest-login],[data-guest-register]');
+    if (!b) return;
+    closeModals();
+    showScreen(b.hasAttribute('data-guest-register') ? 'screen-register-phone' : 'screen-login');
   });
 }
 
@@ -2007,7 +2078,7 @@ async function renderAdsStrip(id) {
   const box = document.getElementById(id);
   if (!box) return;
   try {
-    if (Date.now() - _adsCache.ts > 300000) _adsCache = { ts: Date.now(), items: (await UbourDB.getAllAds()).slice(0, 10) };
+    if (Date.now() - _adsCache.ts > 300000) _adsCache = { ts: Date.now(), items: (await UbourDB.getAllAds()).filter((a) => !a.expires_at || new Date(a.expires_at) > new Date()).slice(0, 10) };
     const ads = _adsCache.items;
     if (!ads.length) { box.classList.add('hidden'); box.innerHTML = ''; return; }
     box.innerHTML = ads.map((a) => {
@@ -2094,6 +2165,7 @@ function initTravelerScreen() {
   initSupportWhatsApp();   // يربط زر واتساب الدعم في شاشتي المسافر والمكتب/السائق
   initTripFilters();
   initNewFeatures();
+  initGuestMode();
   initReviewModal();
   NotifUI.bindBells();
 
@@ -2359,7 +2431,7 @@ async function renderOfficeTrips(office, cached) {
       </div>
       <div class="lc-route">${ICONS.route}<span>${esc(t.from_place)}</span>${ICONS.chevron}<span>${esc(t.to_place)}</span></div>
       ${tripTimesHtml(t)}
-      <div class="lc-meta"><span>${esc(t.seats_available)}/${esc(t.seats_total)} مقعد متاح</span>${t.vehicle_type ? `<span>${ICONS.bus} ${esc(t.vehicle_type)}</span>` : ''}${t.accepts_parcels ? '<span>📦 طرود</span>' : ''}</div>
+      <div class="lc-meta"><span>${esc(t.seats_available)}/${esc(t.seats_total)} مقعد متاح</span>${t.vehicle_type ? `<span>${ICONS.bus} ${esc(t.vehicle_type)}</span>` : ''}${t.accepts_parcels ? '<span>📦 طرود</span>' : ''}${isPromoted(t) ? '<span>⭐ مميّزة حتى ' + esc(fmtDMYHM(t.promoted_until)) + '</span>' : ''}</div>
       ${t.status === 'cancelled' && t.cancel_reason ? `<div class="lc-sub" style="color:var(--error); margin-bottom:10px;">سبب الإلغاء: ${esc(t.cancel_reason)}</div>` : ''}
       <div class="lc-actions">
         ${t.status !== 'cancelled' ? `<button class="btn btn-ghost" data-edit-trip="${esc(t.id)}" style="padding:11px; font-size:13px; flex:1;">تعديل</button>` : ''}
@@ -2707,6 +2779,41 @@ function buildDonutChart(counts, total) {
     </div>`;
 }
 
+/* ---- تمييز الرحلات (للمدير) ---- */
+let _promoteCtx = null, _promoteReady = false;
+function openPromoteModal(t) {
+  if (!t) return;
+  if (!_promoteReady) {
+    _promoteReady = true;
+    bindDaysDate(document.getElementById('input-promote-days'), document.getElementById('input-promote-until'), document.getElementById('promote-preview'), 'تظهر الرحلة مميّزة حتى ');
+    document.getElementById('btn-promote-confirm').addEventListener('click', async () => {
+      const ctx = _promoteCtx; if (!ctx) return;
+      const until = readUntil(document.getElementById('input-promote-days'), document.getElementById('input-promote-until'));
+      if (!until) { const er = document.getElementById('error-promote'); er.textContent = 'أدخل عدد أيام (1 – 365) أو اختر تاريخاً ووقتاً في المستقبل'; er.classList.add('show'); return; }
+      const btn = document.getElementById('btn-promote-confirm'); btn.classList.add('loading'); btn.disabled = true;
+      try {
+        await UbourDB.promoteTrip(ctx.id, until.toISOString());
+        closeModals();
+        showToast('تم تمييز رحلة ' + ctx.label + ' حتى ' + fmtDMYHM(until), 'success', 6000);
+        await renderAdminTrips();
+      } catch (e) { console.error(e); showToast('تعذّر تمييز الرحلة', 'error'); }
+      btn.classList.remove('loading'); btn.disabled = false;
+    });
+    document.getElementById('btn-promote-remove').addEventListener('click', async () => {
+      const ctx = _promoteCtx; if (!ctx) return;
+      try { await UbourDB.promoteTrip(ctx.id, null); closeModals(); showToast('أُلغي تمييز الرحلة', 'info'); await renderAdminTrips(); }
+      catch (e) { console.error(e); showToast('تعذّر إلغاء التمييز', 'error'); }
+    });
+  }
+  _promoteCtx = { id: t.id, label: t.from_place + ' ← ' + t.to_place };
+  document.getElementById('promote-trip-title').textContent = 'تمييز رحلة: ' + t.from_place + ' ← ' + t.to_place;
+  document.getElementById('promote-current').textContent = isPromoted(t) ? ('مميّزة حالياً حتى ' + fmtDMYHM(t.promoted_until)) : 'غير مميّزة';
+  document.getElementById('input-promote-days').value = ''; document.getElementById('input-promote-until').value = '';
+  document.getElementById('promote-preview').textContent = ''; document.getElementById('error-promote').classList.remove('show');
+  document.getElementById('btn-promote-remove').classList.toggle('hidden', !isPromoted(t));
+  openOverlay('modal-admin-promote');
+}
+
 async function renderAdminTrips() {
   const list = document.getElementById('admin-trips-list');
   const trips = (await UbourDB.getAllTrips()).filter(t => !isPastRetention(t)); // يعيد بيانات المكتب مضمَّنة (office) — بلا استعلامات N+1
@@ -2720,14 +2827,19 @@ async function renderAdminTrips() {
         <span class="lc-sub">${esc((office && office.name) || t.office_name)}</span>
         <span class="badge-pill status-${t.status === 'active' ? 'active' : 'inactive'}">${tripStatusLabel(t.status)}</span>
       </div>
+      ${isPromoted(t) ? `<div class="lc-sub" style="margin-bottom:6px; font-weight:800; color:var(--gold-400);">⭐ مميّزة حتى ${esc(fmtDMYHM(t.promoted_until))}</div>` : ''}
       <div class="lc-route">${ICONS.route}<span>${esc(t.from_place)}</span>${ICONS.chevron}<span>${esc(t.to_place)}</span></div>
       <div class="lc-meta"><span>${esc(t.price)} ${currencyLabel(t.currency)}</span><span>${esc(t.seats_available)}/${esc(t.seats_total)} مقعد</span><span>${esc(t.trip_date)} ${esc(t.trip_time)}</span>${t.vehicle_type ? `<span>${ICONS.bus} ${esc(t.vehicle_type)}</span>` : ''}</div>
       <div class="lc-actions">
+        <button type="button" class="btn btn-ghost" data-promote-trip="${esc(t.id)}" style="padding:10px; font-size:13px; flex:1;">${isPromoted(t) ? '⭐ تعديل التمييز' : '⭐ تمييز الرحلة'}</button>
         <button class="icon-action-btn" data-admin-delete-trip="${esc(t.id)}">${ICONS.trash}</button>
       </div>
     </div>
   `;
   }).join('');
+  list.querySelectorAll('[data-promote-trip]').forEach(btn => {
+    btn.addEventListener('click', () => openPromoteModal(trips.find(x => x.id === btn.dataset.promoteTrip)));
+  });
   list.querySelectorAll('[data-admin-delete-trip]').forEach(btn => {
     btn.addEventListener('click', async () => {
       await UbourDB.deleteTrip(btn.dataset.adminDeleteTrip);
@@ -2742,6 +2854,35 @@ async function renderAdminTrips() {
 let _adminOfficesCache = null, _adminToolsReady = false, _renewCtx = null, _editCtx = null, _deleteCtx = null, _editLogoDataUrl = null;
 function fmtDMY(d) { const x = new Date(d); return String(x.getDate()).padStart(2, '0') + '/' + String(x.getMonth() + 1).padStart(2, '0') + '/' + x.getFullYear(); }
 function toInputDate(d) { const x = new Date(d); return x.getFullYear() + '-' + String(x.getMonth() + 1).padStart(2, '0') + '-' + String(x.getDate()).padStart(2, '0'); }
+function fmtDMYHM(d) { const x = new Date(d); return fmtDMY(x) + ' ' + String(x.getHours()).padStart(2, '0') + ':' + String(x.getMinutes()).padStart(2, '0'); }
+function toInputDateTime(d) { const x = new Date(d); return toInputDate(x) + 'T' + String(x.getHours()).padStart(2, '0') + ':' + String(x.getMinutes()).padStart(2, '0'); }
+function isPromoted(t) { return !!(t && t.promoted_until) && new Date(t.promoted_until).getTime() > Date.now(); }
+/** يربط حقل "عدد الأيام" بحقل "التاريخ والوقت": تغيير أحدهما يحسب الآخر لحظياً */
+function bindDaysDate(daysEl, dateEl, prevEl, label) {
+  const upd = (from) => {
+    const now = Date.now();
+    if (from === 'days') {
+      const n = parseInt(normalizeDigits(daysEl.value), 10);
+      if (!n || n < 1) { dateEl.value = ''; prevEl.textContent = ''; return; }
+      const t = new Date(now + n * 86400000); t.setSeconds(0, 0);
+      dateEl.value = toInputDateTime(t); prevEl.textContent = label + fmtDMYHM(t);
+    } else {
+      if (!dateEl.value) { daysEl.value = ''; prevEl.textContent = ''; return; }
+      const t = new Date(dateEl.value), diff = t.getTime() - now;
+      daysEl.value = diff > 0 ? String(Math.ceil(diff / 86400000)) : '';
+      prevEl.textContent = diff > 0 ? label + fmtDMYHM(t) : 'اختر وقتاً في المستقبل';
+    }
+  };
+  daysEl.addEventListener('input', () => upd('days'));
+  dateEl.addEventListener('input', () => upd('date'));
+}
+/** يقرأ وقت الانتهاء من الحقلين: يعيد Date أو null (فارغ) أو false (غير صالح) */
+function readUntil(daysEl, dateEl) {
+  if (dateEl.value) { const t = new Date(dateEl.value); return (t.getTime() > Date.now() && t.getTime() < Date.now() + 366 * 86400000) ? t : false; }
+  const n = parseInt(normalizeDigits(daysEl.value), 10);
+  if (daysEl.value.trim() === '') return null;
+  return (n >= 1 && n <= 365) ? new Date(Date.now() + n * 86400000) : false;
+}
 function openOverlay(id) { closeModals(); document.getElementById(id).classList.add('active'); }
 function fileToLogoDataUrl(file) {
   return new Promise((resolve, reject) => {
@@ -2977,6 +3118,7 @@ async function renderAdminAds() {
         <button class="icon-action-btn" data-delete-ad="${esc(a.id)}">${ICONS.trash}</button>
       </div>
       ${a.description ? `<div class="lc-sub">${esc(a.description)}</div>` : ''}
+      <div class="lc-sub" style="margin-top:4px;">${a.expires_at ? (new Date(a.expires_at) > new Date() ? '⏳ ينتهي في ' + esc(fmtDMYHM(a.expires_at)) : '⛔ انتهى في ' + esc(fmtDMYHM(a.expires_at))) : '♾ بلا تاريخ انتهاء'}</div>
     </div>
   `).join('');
   list.querySelectorAll('[data-delete-ad]').forEach(btn => {
@@ -3086,16 +3228,22 @@ function initAdminScreen() {
     }
   });
 
+  bindDaysDate(document.getElementById('input-ad-days'), document.getElementById('input-ad-until'), document.getElementById('ad-expiry-preview'), 'يختفي الإعلان تلقائياً في ');
   document.getElementById('btn-add-ad').addEventListener('click', async () => {
     const title = document.getElementById('input-ad-title').value.trim();
     if (!title) { showToast('يرجى إدخال عنوان الإعلان', 'error'); return; }
+    const until = readUntil(document.getElementById('input-ad-days'), document.getElementById('input-ad-until'));
+    if (until === false) { showToast('مدة الإعلان غير صحيحة (من 1 إلى 365 يوماً، أو تاريخ في المستقبل)', 'error', 5000); return; }
     await UbourDB.createAd({
       title,
       desc: document.getElementById('input-ad-desc').value.trim(),
       imageUrl: document.getElementById('input-ad-image').value.trim(),
-      linkUrl: document.getElementById('input-ad-link').value.trim()
+      linkUrl: document.getElementById('input-ad-link').value.trim(),
+      expiresAt: until ? until.toISOString() : null
     });
-    ['input-ad-title', 'input-ad-desc', 'input-ad-image', 'input-ad-link'].forEach(id => document.getElementById(id).value = '');
+    ['input-ad-title', 'input-ad-desc', 'input-ad-image', 'input-ad-link', 'input-ad-days', 'input-ad-until'].forEach(id => document.getElementById(id).value = '');
+    document.getElementById('ad-expiry-preview').textContent = '';
+    _adsCache = { ts: 0, items: [] };
     await renderAdminAds();
     showToast('تمت إضافة الإعلان', 'success');
   });
@@ -3175,7 +3323,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   const session = await UbourDB.getSession();
   if (_recoveryMode) showScreen('screen-reset-password', { replace: true });
   else if (session) await routeUserAfterAuth();
-  else if (readPendingTrip()) { const sn = document.getElementById('shared-trip-notice'); if (sn) sn.classList.remove('hidden'); }
+  else if (readPendingTrip()) { showGuestTrips(readPendingTrip()); }
 });
 
 
@@ -3192,7 +3340,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       'icon-check-email': ICONS.mail, 'icon-request-sub': ICONS.whatsapp,
       'icon-success-check': ICONS.check,
       'icon-role-traveler': ICONS.userCircle, 'icon-role-office': ICONS.bus,
-      'icon-trip-search': ICONS.route, 'icon-traveler-avatar': ICONS.userCircle, 'icon-traveler-logout': ICONS.logout,
+      'icon-trip-search': ICONS.route, 'icon-guest-search': ICONS.route, 'icon-traveler-avatar': ICONS.userCircle, 'icon-traveler-logout': ICONS.logout,
       'icon-tnav-search': ICONS.route, 'icon-tnav-bookings': ICONS.box, 'icon-tnav-support': ICONS.info, 'icon-tnav-profile': ICONS.userCircle,
       'icon-office-avatar': ICONS.userCircle, 'icon-office-logout': ICONS.logout, 'icon-upload': ICONS.upload,
       'icon-onav-requests': ICONS.bell, 'icon-onav-trips': ICONS.route, 'icon-onav-support': ICONS.info, 'icon-onav-profile': ICONS.userCircle,
