@@ -1132,6 +1132,7 @@ function initRegisterAccountScreen() {
     const result = await UbourAuth.signUp({ phoneRaw: _pendingRegPhone, email, password: pwInput.value });
     btn.classList.remove('loading');
     btn.disabled = false;
+    if (result.ok) clearTermsAcceptance();
 
     if (!result.ok) {
       if (result.error === 'DUPLICATE_PHONE') {
@@ -1773,6 +1774,25 @@ function initGuestMode() {
   });
 }
 
+/* ---- موافقة الشروط: زر «موافق» في صفحتي الشروط والخصوصية يعلّم خانة الموافقة عند العودة ---- */
+const TERMS_KEY = 'ubour_terms_accepted';
+function termsAcceptedFresh() {
+  try { const t = parseInt(localStorage.getItem(TERMS_KEY) || '0', 10); return t > 0 && Date.now() - t < 6 * 3600 * 1000; } catch (e) { return false; }
+}
+function clearTermsAcceptance() { try { localStorage.removeItem(TERMS_KEY); } catch (e) { /* تجاهل */ } }
+function applyTermsAcceptance(silent) {
+  const cb = document.getElementById('checkbox-terms');
+  if (!cb || cb.checked || !termsAcceptedFresh()) return;
+  cb.checked = true;
+  if (!silent) showToast('تم تسجيل موافقتك على شروط الاستخدام وسياسة الخصوصية ✔', 'success', 4000);
+}
+function initTermsAcceptance() {
+  window.addEventListener('storage', (e) => { if (e.key === TERMS_KEY) applyTermsAcceptance(false); });
+  window.addEventListener('focus', () => applyTermsAcceptance(false));
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) applyTermsAcceptance(false); });
+  applyTermsAcceptance(true);
+}
+
 function initTripFilters() {
   document.querySelectorAll('[data-filter-parcels]').forEach((btn) => btn.addEventListener('click', () => { _tripFilters.parcels = !_tripFilters.parcels; drawTravelerTrips(); }));
   document.querySelectorAll('[data-filter-time]').forEach((btn) => btn.addEventListener('click', () => {
@@ -2166,6 +2186,7 @@ function initTravelerScreen() {
   initTripFilters();
   initNewFeatures();
   initGuestMode();
+  initTermsAcceptance();
   initReviewModal();
   NotifUI.bindBells();
 

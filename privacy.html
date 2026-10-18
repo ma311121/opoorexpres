@@ -17,11 +17,17 @@
   .meta { color: #8a97ab; font-size: 13px; }
   a { color: #16bfad; }
   .back { display: inline-block; margin-bottom: 12px; font-size: 14px; }
+  .topbar { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 8px; }
+  .back-btn { display: inline-flex; align-items: center; gap: 6px; padding: 9px 16px; border-radius: 14px; border: 1px solid #1d2d45; background: rgba(255,255,255,0.06); color: #e8edf5; font-size: 14px; font-weight: 700; text-decoration: none; }
+  .accept-bar { position: sticky; bottom: 0; margin: 30px -18px 0; padding: 12px 18px calc(12px + env(safe-area-inset-bottom, 0px)); background: linear-gradient(180deg, rgba(6,14,25,0.92), #060E19 40%); border-top: 1px solid #1d2d45; }
+  .btn-accept { display: block; width: 100%; padding: 15px; border: none; border-radius: 14px; font-family: inherit; font-size: 16px; font-weight: 800; color: #04252b; background: linear-gradient(135deg, #2bdcc7, #16bfad); cursor: pointer; }
+  .btn-accept:disabled { opacity: .85; cursor: default; }
+  .accept-note { margin: 8px 0 0; text-align: center; font-size: 12.5px; line-height: 1.8; color: #8a97ab; }
 </style>
 </head>
 <body>
 <main>
-<a class="back" href="./">← العودة إلى التطبيق</a>
+<div class="topbar"><a class="back-btn" href="./" data-back>← رجوع للتطبيق</a></div>
 <h1>سياسة الخصوصية</h1>
 <div class="meta">آخر تحديث: أكتوبر 2026</div>
 
@@ -88,6 +94,12 @@
 <h2>11. التواصل</h2>
 <p>لأي استفسار عن الخصوصية: زر واتساب الدعم داخل التطبيق.</p>
 
+<div class="accept-bar">
+  <button type="button" id="btn-accept" class="btn-accept">✔ موافق على شروط الاستخدام وسياسة الخصوصية</button>
+  <p class="accept-note">بالضغط على «موافق» تقرّ بأنك قرأت الشروط وسياسة الخصوصية ووافقت عليهما. <a href="terms.html">اقرأ شروط الاستخدام</a></p>
+</div>
+
 </main>
+<script src="legal.js" defer></script>
 </body>
 </html>

@@ -5,7 +5,7 @@
    • الطلبات الخارجية (Supabase وCDN) لا يتدخل فيها نهائياً — لا تُخزَّن بيانات المستخدمين.
    عند أي تحديث للملفات غيّر CACHE_VERSION.
    ========================================================================= */
-const CACHE_VERSION = 'ubour-v5.4.2';
+const CACHE_VERSION = 'ubour-v5.4.3';
 
 const APP_SHELL = [
   './',
@@ -14,6 +14,7 @@ const APP_SHELL = [
   './sentry-config.js',
   './privacy.html',
   './terms.html',
+  './legal.js',
   './manifest.json',
   './icon-192.png',
   './icon-512.png',
