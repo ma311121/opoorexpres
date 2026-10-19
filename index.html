@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>عبور إكسبريس | Ubour Express</title>
 <meta name="description" content="منصتك الشاملة لنقل الركاب والشحن داخل اليمن وإلى السعودية — يربط المسافات ويختصر الطريق">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdn.jsdelivr.net https://js.sentry-cdn.com https://browser.sentry-cdn.com https://accounts.google.com/gsi/client; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://accounts.google.com/gsi/style; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https:; connect-src 'self' https://yytkkvgepauahwfvyicp.supabase.co wss://yytkkvgepauahwfvyicp.supabase.co https://o4512211789086720.ingest.us.sentry.io https://accounts.google.com/gsi/; frame-src https://accounts.google.com/gsi/; manifest-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdn.jsdelivr.net https://js.sentry-cdn.com https://browser.sentry-cdn.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https:; connect-src 'self' https://yytkkvgepauahwfvyicp.supabase.co wss://yytkkvgepauahwfvyicp.supabase.co https://o4512211789086720.ingest.us.sentry.io; manifest-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'">
 <meta name="referrer" content="strict-origin-when-cross-origin">
 <meta name="theme-color" content="#060E19">
 <meta name="color-scheme" content="dark">
@@ -1342,53 +1342,64 @@ button, a, .nav-item { touch-action: manipulation; }
 .guest-cta-actions { display: flex; gap: 8px; }
 .guest-cta-actions .btn { margin-top: 0; padding: 12px; font-size: 14px; }
 
-/* v5.5 — تفاصيل الرحلة + إعلانات المكتب + التأكيد المزدوج */
-.tc-extra { display: flex; flex-direction: column; gap: 8px; margin: 0 0 8px; }
-.tc-tag { align-self: flex-start; display: inline-flex; align-items: center; gap: 4px; padding: 3px 12px; border-radius: 999px; font-size: 12px; font-weight: 800; color: var(--gold-400); background: rgba(201,161,92,0.14); border: 1px solid rgba(201,161,92,0.5); }
-.tc-route-details { display: flex; gap: 8px; align-items: flex-start; font-size: 13px; line-height: 1.7; color: var(--text-primary); }
-.tc-amen { display: flex; flex-wrap: wrap; gap: 6px; }
-.tc-amen-chip { padding: 2px 10px; border-radius: 999px; font-size: 11.5px; font-weight: 700; color: var(--text-secondary); background: rgba(255,255,255,0.06); border: 1px solid var(--navy-border); }
-.amen-picks { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
-.amen-pick { padding: 5px 11px; border-radius: 999px; border: 1px solid var(--navy-border); background: rgba(255,255,255,0.04); color: var(--text-secondary); font-family: inherit; font-size: 12px; font-weight: 700; cursor: pointer; }
-.amen-pick.on { color: #0b1b2b; background: var(--gold-400); border-color: var(--gold-400); }
-.sub-tabs { display: flex; gap: 8px; padding: 0 var(--space-5) 12px; }
-.sub-tab { flex: 1; padding: 10px 8px; border-radius: var(--radius-sm); border: 1px solid var(--navy-border); background: rgba(255,255,255,0.04); color: var(--text-secondary); font-family: inherit; font-weight: 800; font-size: 13px; cursor: pointer; }
-.sub-tab.active { color: #0b1b2b; background: var(--gold-400); border-color: var(--gold-400); }
-.promo-note { display: flex; flex-direction: column; gap: 3px; margin: 0 0 10px; padding: 9px 12px; border-radius: 12px; font-size: 12.5px; line-height: 1.7; background: rgba(201,161,92,0.1); border: 1px solid rgba(201,161,92,0.5); color: var(--text-primary); }
-.promo-note b { color: var(--gold-400); font-size: 13px; }
-.promo-note.ended { background: rgba(255,255,255,0.04); border-color: var(--navy-border); color: var(--text-secondary); }
-.promo-note.ended b { color: var(--text-secondary); }
-.confirm-split { display: flex; flex: 1 1 100%; gap: 6px; align-items: stretch; }
-.act-wa { flex: 1 1 auto; display: inline-flex; align-items: center; justify-content: center; gap: 6px; background: #1FAA59; color: #fff; border-color: #1FAA59; }
-.act-wa svg { width: 16px; height: 16px; }
-.act-direct { flex: 0 0 46px; border-radius: var(--radius-sm); border: 1px solid var(--success); background: rgba(45,212,167,0.12); color: var(--success); font-size: 17px; line-height: 1; cursor: pointer; }
-/* v5.6 — اختيار البريد بلمسة واحدة (Google) */
-.google-pick { display: flex; flex-direction: column; align-items: center; gap: 8px; margin: -4px 0 18px; }
-.google-pick.hidden { display: none; }
-.google-pick-label { font-size: 12px; color: var(--text-muted); }
-/* إصلاح الخلفية البيضاء: الصفحة داكنة (color-scheme: dark) وإطار Google فاتح، فيرسم المتصفح خلفية بيضاء معتمة خلفه */
-#google-email-btn, #google-email-btn iframe { color-scheme: light; }
-#google-email-btn { border-radius: 999px; overflow: hidden; min-height: 44px; background: transparent; }
+/* v5.9 — شريط التنقل السفلي ثابت دائماً + بحث وجهة */
+.bottom-nav { position: fixed; z-index: 40; }
+@keyframes screenFade { from { opacity: 0; } to { opacity: 1; } }
+#screen-traveler, #screen-office, #screen-guest { animation-name: screenFade; }
+input.filter-select { appearance: none; -webkit-appearance: none; }
 
-/* مربع الموافقة: كان مخفياً لأن القاعدة العامة (appearance: none) تزيل شكله — نرسمه من جديد مع علامة ✓ */
-.checkbox-row input, .check-row input {
-  -webkit-appearance: none; appearance: none; flex-shrink: 0;
-  width: 22px; height: 22px; margin: 1px 0 0; padding: 0;
-  display: inline-grid; place-content: center;
-  border: 2px solid rgba(255,255,255,0.38); border-radius: 7px;
-  background: rgba(255,255,255,0.05); cursor: pointer;
-  transition: background .15s, border-color .15s, box-shadow .15s;
-}
-.checkbox-row input::after, .check-row input::after {
-  content: ''; width: 6px; height: 11px; margin-top: -2px;
-  border: solid #0B1B2B; border-width: 0 2.6px 2.6px 0;
-  transform: rotate(45deg) scale(0); transition: transform .12s ease-out;
-}
-.checkbox-row input:checked { background: var(--teal-500); border-color: var(--teal-500); }
-.check-row input:checked { background: var(--gold-400); border-color: var(--gold-400); }
-.checkbox-row input:checked::after, .check-row input:checked::after { transform: rotate(45deg) scale(1); }
-.checkbox-row input:focus-visible, .check-row input:focus-visible { outline: 2px solid var(--teal-400); outline-offset: 2px; }
-.checkbox-row.has-error input:not(:checked) { border-color: var(--error); box-shadow: 0 0 0 3px var(--error-bg); }
+/* v5.9 — الإعلانات: شريط متحرك + صفحة كاملة + تفاصيل */
+.ads-strip { display: block; overflow: visible; scroll-snap-type: none; gap: 0; padding: 0 var(--space-5) 8px; margin-bottom: 6px; }
+.ads-strip.hidden { display: none; }
+.ads-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+.ads-head-title { font-size: 15px; font-weight: 800; color: var(--white); }
+.ads-all-btn { padding: 6px 12px; border-radius: 999px; border: 1px solid rgba(201,161,92,0.55); background: rgba(201,161,92,0.1); color: var(--gold-400); font-family: inherit; font-size: 12px; font-weight: 800; cursor: pointer; white-space: nowrap; }
+.ads-track { display: flex; gap: 10px; overflow-x: auto; scroll-snap-type: x mandatory; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
+.ads-track::-webkit-scrollbar { display: none; }
+.ad-slide { position: relative; flex: 0 0 88%; height: 150px; scroll-snap-align: center; border-radius: 18px; overflow: hidden; border: 1px solid rgba(201,161,92,0.45); background: linear-gradient(135deg, #132640, #0b1626); cursor: pointer; }
+.ads-strip.single .ad-slide { flex-basis: 100%; }
+.ad-slide-trip { padding: 12px 14px; display: flex; flex-direction: column; gap: 5px; }
+.as-top { display: flex; align-items: center; gap: 6px; }
+.as-office { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.as-office .office-avatar { width: 28px; height: 28px; border-radius: 8px; font-size: 13px; }
+.as-name { font-size: 13.5px; font-weight: 800; color: var(--white); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.as-route { font-size: 17px; font-weight: 900; color: var(--white); }
+.as-meta { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 12.5px; color: var(--text-secondary); }
+.as-price { font-size: 16px; font-weight: 900; color: var(--gold-400); }
+.as-cta { align-self: flex-start; margin-top: auto; padding: 5px 16px; border-radius: 999px; background: linear-gradient(135deg, #2bdcc7, #16bfad); color: #04252b; font-size: 12.5px; font-weight: 800; }
+.ad-slide-ad .as-img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.as-shade { position: absolute; inset: 0; background: linear-gradient(180deg, rgba(6,14,25,0.05) 25%, rgba(6,14,25,0.9)); }
+.as-body { position: absolute; left: 0; right: 0; bottom: 0; padding: 12px 14px; display: flex; flex-direction: column; gap: 3px; }
+.ad-slide-ad:not(.has-img) .as-body { top: 0; justify-content: center; }
+.as-title { font-size: 16px; font-weight: 900; color: var(--white); }
+.as-desc { font-size: 12.5px; line-height: 1.7; color: #d3dbe7; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.ad-tag { align-self: flex-start; font-size: 10.5px; font-weight: 800; color: #0b1b2b; background: var(--gold-400); border-radius: 999px; padding: 1px 9px; }
+.ads-dots { display: flex; justify-content: center; gap: 6px; margin-top: 8px; }
+.ads-dot { width: 6px; height: 6px; border-radius: 50%; background: rgba(255,255,255,0.25); transition: all 0.2s; }
+.ads-dot.active { width: 18px; border-radius: 6px; background: var(--gold-400); }
+.ad-page-img { width: 100%; height: 150px; object-fit: cover; border-radius: 12px; margin-bottom: 10px; display: block; }
+.ad-desc-tile { margin-bottom: 8px; }
+.ad-desc-tile b { font-size: 13.5px; line-height: 1.8; font-weight: 700; }
+.ad-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 6px; }
+.ad-actions.hidden { display: none; }
+.ad-btn { flex: 1 1 auto; display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 11px 14px; border-radius: 12px; font-size: 14px; font-weight: 800; text-decoration: none; color: var(--white); border: 1px solid var(--navy-border); background: rgba(255,255,255,0.06); }
+.ad-btn.wa { background: #1faa59; border-color: #1faa59; }
+.ad-btn svg { width: 18px; height: 18px; }
+.ad-detail-img { width: 100%; max-height: 220px; object-fit: cover; border-radius: 14px; margin-bottom: 12px; display: block; }
+.ad-detail-img.hidden { display: none; }
+
+/* v5.9.1 — ضبط شريحة الرحلة المميزة */
+.ad-slide { height: 172px; }
+.ad-slide-trip { gap: 4px; }
+.as-meta { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 12.5px; color: var(--text-secondary); }
+.as-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: auto; }
+.as-foot .as-cta { margin-top: 0; align-self: auto; }
+.as-price { font-size: 15px; }
+.ads-dots { direction: rtl; }
+
+/* v5.9.2 — النوافذ المنبثقة تظهر أمام المستخدم دائماً (كانت تُرسم في أسفل الصفحة الطويلة) */
+.modal-overlay { position: fixed; top: 0; right: 0; bottom: 0; left: 0; }
+.guest-cta { max-width: var(--max-width); margin: 0 auto; }
 </style>
 </head>
 <body>
@@ -1518,11 +1529,6 @@ button, a, .nav-item { touch-action: manipulation; }
           <span class="input-icon" id="icon-reg-email"></span>
           <input type="email" id="input-reg-email" placeholder="name@example.com" autocomplete="email" style="direction:ltr; text-align:right;">
         </div>
-      </div>
-
-      <div id="google-email-pick" class="google-pick hidden">
-        <div class="google-pick-label">أو اختر بريدك من حسابات جهازك بلمسة واحدة</div>
-        <div id="google-email-btn"></div>
       </div>
 
       <div class="field">
@@ -1738,6 +1744,25 @@ button, a, .nav-item { touch-action: manipulation; }
   </section>
 
   <!-- =====================================================
+       شاشة كل الإعلانات
+  ====================================================== -->
+  <section id="screen-ads" class="screen">
+    <div class="home-scroll" style="padding-bottom: 40px;">
+      <div class="home-header">
+        <div class="greeting">
+          <img data-logo-embed alt="شعار">
+          <div class="greeting-text">
+            <div class="hello">📣 كل الإعلانات</div>
+            <div class="user-phone" style="direction:rtl;">رحلات مميزة وعروض المكاتب</div>
+          </div>
+        </div>
+        <button type="button" class="btn btn-ghost" id="btn-ads-back" style="width:auto; padding:9px 14px; font-size:13px;">رجوع</button>
+      </div>
+      <div class="service-cards" id="ads-page-list" style="margin-top:8px; padding-bottom: 24px;"></div>
+    </div>
+  </section>
+
+  <!-- =====================================================
        شاشة 10: لوحة المسافر
   ====================================================== -->
   <section id="screen-traveler" class="screen">
@@ -1767,7 +1792,7 @@ button, a, .nav-item { touch-action: manipulation; }
               <button type="button" class="chip" data-filter-parcels>📦 طرود</button>
             </div>
             <div class="filter-grid">
-              <select id="filter-destination" class="filter-select" aria-label="الوجهة"><option value="">كل الوجهات</option></select>
+              <input type="text" id="filter-destination" class="filter-select" list="datalist-dests" placeholder="اكتب الوجهة" aria-label="الوجهة" autocomplete="off"><datalist id="datalist-dests"></datalist>
               <select id="filter-rating" class="filter-select" aria-label="تقييم المكتب">
                 <option value="0">أي تقييم</option><option value="3">★ 3 فأكثر</option><option value="4">★ 4 فأكثر</option><option value="4.5">★ 4.5 فأكثر</option>
               </select>
@@ -1887,6 +1912,7 @@ button, a, .nav-item { touch-action: manipulation; }
           </div>
           <button type="button" class="bell-btn" data-open-notifications aria-label="التنبيهات"><span class="bell-badge" data-notif-badge hidden>0</span></button>
         </div>
+        <div id="ads-strip-office" class="ads-strip hidden"></div>
         <div class="service-cards" id="office-requests-list" style="margin-bottom:24px;"></div>
         <div data-download-slot></div>
       </div>
@@ -1896,17 +1922,7 @@ button, a, .nav-item { touch-action: manipulation; }
           <h2>رحلاتي</h2>
           <button class="btn-install-cta" id="btn-open-add-trip">+ إضافة رحلة</button>
         </div>
-        <div class="sub-tabs" role="tablist">
-          <button type="button" class="sub-tab active" data-office-subtab="trips" role="tab">رحلاتي</button>
-          <button type="button" class="sub-tab" data-office-subtab="ads" role="tab">إعلاناتي 📣</button>
-        </div>
-        <div id="office-trips-pane">
-          <div class="service-cards" id="office-trips-list" style="margin-bottom:24px;"></div>
-        </div>
-        <div id="office-ads-pane" class="hidden">
-          <p class="field-hint" style="padding:0 var(--space-5) 10px;">رحلاتك التي أُعلن عنها من الإدارة — للعرض والمعاينة فقط.</p>
-          <div class="service-cards" id="office-ads-list" style="margin-bottom:24px;"></div>
-        </div>
+        <div class="service-cards" id="office-trips-list" style="margin-bottom:24px;"></div>
       </div>
 
       <div id="office-view-support" class="home-view hidden">
@@ -2051,19 +2067,6 @@ button, a, .nav-item { touch-action: manipulation; }
           <div class="time-preview" id="preview-trip-checkin"></div>
         </div>
         <div class="field">
-          <label for="input-trip-title">وصف مميز للرحلة (اختياري)</label>
-          <div class="input-wrap"><input type="text" id="input-trip-title" maxlength="40" autocomplete="off" placeholder="مثال: رحلة VIP، رحلة عائلية، رحلة مباشرة"></div>
-        </div>
-        <div class="field">
-          <label for="input-trip-route">تفاصيل المسار (اختياري)</label>
-          <div class="input-wrap"><input type="text" id="input-trip-route" maxlength="160" autocomplete="off" placeholder="مثال: عبر طريق دوعن / وادي العين إلى المكلا"></div>
-        </div>
-        <div class="field">
-          <label for="input-trip-amenities">مميزات الرحلة (اختياري)</label>
-          <div class="input-wrap"><input type="text" id="input-trip-amenities" maxlength="160" autocomplete="off" placeholder="تكييف ممتاز، شواحن هواتف، مقاعد مريحة"></div>
-          <div class="amen-picks" id="amenity-picks"></div>
-        </div>
-        <div class="field">
           <label class="check-row" for="input-trip-parcels"><input type="checkbox" id="input-trip-parcels"><span>📦 هذه الرحلة تستقبل طرود</span></label>
           <div class="input-wrap hidden" id="wrap-trip-parcels-note"><input type="text" id="input-trip-parcels-note" maxlength="120" placeholder="ملاحظة اختيارية: مثل الشحن حسب الحجم والوزن"></div>
         </div>
@@ -2143,8 +2146,13 @@ button, a, .nav-item { touch-action: manipulation; }
             <div class="input-wrap"><input type="text" id="input-ad-desc"></div>
           </div>
           <div class="field">
-            <label for="input-ad-image">رابط الصورة (اختياري)</label>
-            <div class="input-wrap"><input type="text" id="input-ad-image" placeholder="https://..." style="direction:ltr; text-align:right;"></div>
+            <label for="input-ad-file">صورة الإعلان (اختيارية) — اختر من المعرض</label>
+            <img id="ad-image-preview" class="hidden" alt="" style="width:100%; max-height:150px; object-fit:cover; border-radius:12px; margin-bottom:8px;">
+            <div class="input-wrap"><input type="file" id="input-ad-file" accept="image/*"></div>
+          </div>
+          <div class="field">
+            <label for="input-ad-phone">رقم التواصل (واتساب واتصال) — اختياري</label>
+            <div class="input-wrap"><input type="tel" id="input-ad-phone" inputmode="tel" placeholder="7XXXXXXXX أو 05XXXXXXXX" autocomplete="off"></div>
           </div>
           <div class="field">
             <label for="input-ad-link">رابط عند الضغط (اختياري)</label>
@@ -2189,7 +2197,7 @@ button, a, .nav-item { touch-action: manipulation; }
             <label for="input-identity-logo">رابط الشعار (اختياري)</label>
             <div class="input-wrap"><input type="text" id="input-identity-logo" placeholder="https://..." style="direction:ltr; text-align:right;"></div>
           </div>
-          <p class="field-hint" style="margin-bottom:16px;">يُطبَّق الاسم فوراً على كل شاشات التطبيق لجميع المستخدمين الجدد. لتغيير دائم في الكود المصدري راجع APP_CONFIG داخل app.js.</p>
+          <p class="field-hint" style="margin-bottom:16px;">يُطبَّق الاسم فوراً على كل شاشات التطبيق لجميع المستخدمين الجدد. لتغيير دائم في الكود المصدري راجع js/config.js.</p>
           <button class="btn btn-primary" id="btn-save-identity"><span class="btn-label">حفظ</span><span class="spinner"></span></button>
         </div>
       </div>
@@ -2249,18 +2257,6 @@ button, a, .nav-item { touch-action: manipulation; }
         <span class="btn-label">تأكيد الإلغاء وإرسال السبب</span><span class="spinner"></span>
       </button>
       <button class="btn btn-text" data-close-modal style="margin-top:10px;">تراجع</button>
-    </div>
-  </div>
-
-  <!-- تأكيد مباشر للحجز من التطبيق (بديل واتساب) -->
-  <div class="modal-overlay" id="modal-confirm-booking">
-    <div class="modal-sheet">
-      <div class="modal-handle"></div>
-      <h3>هل تود تأكيد هذه الرحلة؟</h3>
-      <p class="lc-sub" id="direct-confirm-summary" style="margin-bottom:6px; line-height:1.8;"></p>
-      <p class="field-hint" style="margin-bottom:14px;">يتحوّل الحجز إلى «مؤكد» فوراً ويصل المسافر تنبيه داخل التطبيق، دون فتح واتساب.</p>
-      <button class="btn btn-primary" id="btn-direct-confirm"><span class="btn-label">تأكيد</span><span class="spinner"></span></button>
-      <button class="btn btn-text" data-close-modal style="margin-top:10px;">إلغاء</button>
     </div>
   </div>
 
@@ -2331,6 +2327,7 @@ button, a, .nav-item { touch-action: manipulation; }
       <div class="field"><label for="input-alert-to">إلى</label>
         <div class="input-wrap"><input type="text" id="input-alert-to" list="datalist-places" maxlength="60" placeholder="اكتب أو اختر المدينة" autocomplete="off"></div></div>
       <div class="field-error" id="error-route-alert"></div>
+      <p class="lc-sub" style="margin:0 0 10px;">ليصلك التنبيه على جوالك والتطبيق مغلق: افتح الجرس 🔔 وفعّل «إشعارات الجوال».</p>
       <button class="btn btn-primary" id="btn-add-route-alert"><span class="btn-label">إضافة تنبيه</span><span class="spinner"></span></button>
       <div class="section-title" style="padding:0; margin:16px 0 6px; font-size:14px;">تنبيهاتي</div>
       <div id="route-alerts-list"></div>
@@ -2368,6 +2365,17 @@ button, a, .nav-item { touch-action: manipulation; }
       <button class="btn btn-primary" id="btn-promote-confirm"><span class="btn-label">موافق / تمييز</span><span class="spinner"></span></button>
       <button class="btn btn-ghost hidden" id="btn-promote-remove" style="margin-top:10px; color:var(--error);">إلغاء التمييز</button>
       <button class="btn btn-text" data-close-modal style="margin-top:10px;">تراجع</button>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="modal-ad-detail">
+    <div class="modal-sheet">
+      <div class="modal-handle"></div>
+      <img id="ad-detail-img" class="ad-detail-img hidden" alt="">
+      <h3 id="ad-detail-title"></h3>
+      <p id="ad-detail-desc" style="line-height:1.9; margin:0 0 12px;"></p>
+      <div class="ad-actions" id="ad-detail-actions"></div>
+      <button class="btn btn-text" data-close-modal style="margin-top:10px;">إغلاق</button>
     </div>
   </div>
 
