@@ -1134,6 +1134,7 @@ function initRegisterAccountScreen() {
       return;
     }
     if (!terms.checked) {
+      const row = terms.closest('.checkbox-row'); if (row) row.classList.add('has-error');
       showToast('يرجى الموافقة على الشروط وسياسة الخصوصية للمتابعة', 'error');
       return;
     }
@@ -4082,7 +4083,8 @@ function _gisSetup() {
       use_fedcm_for_prompt: true
     });
     box.classList.remove('hidden');
-    const w = Math.round(Math.min(340, Math.max(220, (box.parentElement && box.parentElement.clientWidth) || 300)));
+    const ref = document.getElementById('wrap-reg-email');   // نفس عرض حقل البريد ليتطابقا
+    const w = Math.round(Math.min(400, Math.max(200, (ref && ref.offsetWidth) || (box.parentElement && box.parentElement.clientWidth) || 300)));
     google.accounts.id.renderButton(btnHost, { type: 'standard', theme: 'filled_black', size: 'large', shape: 'pill', text: 'continue_with', locale: 'ar', width: w });
     _gisState = 'ready';
   } catch (e) { box.classList.add('hidden'); _gisState = 'failed'; }
