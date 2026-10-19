@@ -383,7 +383,7 @@ const UbourDB = (() => {
     },
 
     /* ============ الرحلات ============ */
-    async createTrip({ officeId, officeName, from, to, vehicleType, price, currency, seatsTotal, date, time, checkin, parcels, parcelsNote }) {
+    async createTrip({ officeId, officeName, from, to, vehicleType, price, currency, seatsTotal, date, time, checkin, parcels, parcelsNote, tripTitle, routeDetails, amenities }) {
       const row = {
         office_id: officeId, office_name: officeName, from_place: from, to_place: to,
         vehicle_type: vehicleType, price: Number(price), currency,
@@ -392,6 +392,9 @@ const UbourDB = (() => {
       };
       if (checkin) row.checkin_time = checkin;
       if (parcels) { row.accepts_parcels = true; if (parcelsNote) row.parcels_note = parcelsNote; }
+      if (tripTitle) row.trip_title = tripTitle;
+      if (routeDetails) row.route_details = routeDetails;
+      if (amenities) row.amenities = amenities;
       const { data, error } = await supabaseClient.from('trips').insert(row).select().single();
       _throwIfError(error);
       return data;
@@ -598,7 +601,11 @@ const UbourDB = (() => {
       return (data || []).map((r) => Object.assign({}, r, { office: { name: r.office_name, logo_url: r.office_logo, featured: r.office_featured } }));
     },
     async promoteTrip(id, untilIso) {
-      const { data, error } = await supabaseClient.from('trips').update({ promoted_until: untilIso }).eq('id', id).select().single();
+      let { data, error } = await supabaseClient.from('trips')
+        .update({ promoted_until: untilIso, promoted_from: untilIso ? new Date().toISOString() : null }).eq('id', id).select().single();
+      if (error && /promoted_from/i.test(String(error.message || ''))) {   // قبل إضافة العمود في القاعدة: نحدّث وقت الانتهاء فقط
+        ({ data, error } = await supabaseClient.from('trips').update({ promoted_until: untilIso }).eq('id', id).select().single());
+      }
       _throwIfError(error);
       return data;
     },
@@ -1370,7 +1377,7 @@ function tripTimesHtml(t) {
 /** نص وصنف شارة الحجز حسب من يشاهدها ('traveler' | 'office') */
 function bookingBadge(b, viewer) {
   if (b.status === 'pending') return { text: 'قيد الانتظار', cls: 'status-pending' };
-  if (b.status === 'completed') return { text: 'مؤكد ✅', cls: 'status-completed' };
+  if (b.status === 'completed') return { text: 'تم تأكيد الحجز ✅', cls: 'status-completed' };
   const byOffice = b.cancelled_by === 'office';
   const rejected = byOffice && b.confirmed_at === null;           // لم يُؤكَّد أصلاً
   let text;
@@ -1443,7 +1450,6 @@ async function routeUserAfterAuth() {
     clearPendingTrip();
     await renderOfficeScreen();
     showScreen('screen-office', { replace: true });
-    renderAdsStrip('ads-strip-office');
   } else {
     showScreen('screen-role-select', { replace: true });
   }
@@ -1631,6 +1637,7 @@ function drawTravelerTrips() {
       ${tcRouteHtml(t)}
       ${tcTimesHtml(t)}
       ${tcInfoHtml(t.seats_available, 'مقعد متاح', t.vehicle_type)}
+      ${tcExtraHtml(t)}
       ${t.accepts_parcels ? `<div class="tc-parcels">${ICONS.box}<span><b>يستقبل طرود</b>${t.parcels_note ? ' — ' + esc(t.parcels_note) : ''}</span></div>` : ''}
       <button type="button" class="details-toggle" data-toggle-details aria-expanded="false">عرض التفاصيل</button><div class="trip-details">${officeInfoHtml(office, true)}${PHONES_AFTER_CONFIRM_HINT}${t.accepts_parcels ? `<button type="button" class="parcel-ask-btn" data-parcel-trip="${esc(t.id)}">${ICONS.whatsapp}<span>اسأل عن إرسال طرد</span></button>` : ''}</div>
       <div class="lc-actions">
@@ -1747,6 +1754,7 @@ function drawGuestTrips() {
       ${tcRouteHtml(t)}
       ${tcTimesHtml(t)}
       ${tcInfoHtml(t.seats_available, 'مقعد متاح', t.vehicle_type)}
+      ${tcExtraHtml(t)}
       ${t.accepts_parcels ? `<div class="tc-parcels">${ICONS.box}<span><b>يستقبل طرود</b>${t.parcels_note ? ' — ' + esc(t.parcels_note) : ''}</span></div>` : ''}
       <div class="lc-actions">
         <button class="btn btn-primary" data-guest-book="${esc(t.id)}" style="margin-top:0;">🔒 سجّل دخولك للحجز</button>
@@ -1848,6 +1856,7 @@ async function renderTravelerBookings() {
         ${tcRouteHtml(trip)}
         ${tcTimesHtml(trip)}
         ${tcInfoHtml(b.seats, 'مقعد محجوز', trip.vehicle_type)}
+        ${tcExtraHtml(trip)}
         <button type="button" class="details-toggle" data-toggle-details data-label="تفاصيل المكتب" aria-expanded="false">تفاصيل المكتب</button><div class="trip-details">${officeInfoHtml(office, b.status !== 'completed')}${b.status !== 'completed' && live ? PHONES_AFTER_CONFIRM_HINT : ''}</div>
         ${b.status === 'cancel_requested' ? cancelReasonBoxHtml(b) : ''}
         ${soon && !b.ready_at ? `<div class="remind-box"><span>⏰ رحلتك بعد ${esc(hoursText(hrs))}${ci}. هل أنت مستعد؟</span><button type="button" class="act-btn act-confirm" data-ready-booking="${esc(b.id)}">أنا جاهز ✅</button></div>` : ''}
@@ -1904,7 +1913,7 @@ async function openBookingModal(tripId) {
   const head = document.getElementById('book-trip-office');
   if (head) {
     const rt = (await UbourDB.getOfficeRatings([trip.office_id]))[trip.office_id];
-    head.innerHTML = `<div class="office-head">${officeAvatarHtml(office || { name: trip.office_name }, 'lg')}<div class="office-meta"><div class="office-name">${esc((office && office.name) || trip.office_name)}</div>${ratingBadgeHtml(rt)}${officeInfoHtml(office)}</div></div>`;
+    head.innerHTML = `<div class="office-head">${officeAvatarHtml(office || { name: trip.office_name }, 'lg')}<div class="office-meta"><div class="office-name">${esc((office && office.name) || trip.office_name)}</div>${ratingBadgeHtml(rt)}${officeInfoHtml(office, true)}</div></div>`;
   }
   document.getElementById('book-trip-summary').innerHTML =
     `<div class="lc-route" style="margin-bottom:8px;">${esc(trip.from_place)} ← ${esc(trip.to_place)}</div>` +
@@ -2045,20 +2054,49 @@ function tcInfoHtml(count, text, vehicle) {
     + (vehicle ? '<div class="tc-tile tc-veh"><small>نوع السيارة</small><b>' + esc(vehicle) + '</b></div>' : '') + '</div>';
 }
 
+/** تفاصيل اختيارية يكتبها المكتب: وصف مميز + مسار + مميزات (لا أرقام هواتف هنا إطلاقاً) */
+function tcExtraHtml(t) {
+  if (!t) return '';
+  const tag = String(t.trip_title || '').trim();
+  const route = String(t.route_details || '').trim();
+  const am = String(t.amenities || '').split(/[,،]/).map((x) => x.trim()).filter(Boolean).slice(0, 10);
+  if (!tag && !route && !am.length) return '';
+  return '<div class="tc-extra">'
+    + (tag ? '<span class="tc-tag">🏷️ ' + esc(tag) + '</span>' : '')
+    + (route ? '<div class="tc-route-details"><span aria-hidden="true">🛣️</span><span><b>المسار:</b> ' + esc(route) + '</span></div>' : '')
+    + (am.length ? '<div class="tc-amen">' + am.map((a) => '<span class="tc-amen-chip">' + esc(a) + '</span>').join('') + '</div>' : '')
+    + '</div>';
+}
+
 /* ---- مشاركة الرحلة عبر واتساب + رابط مباشر يفتح حجزها ---- */
 const PENDING_TRIP_KEY = 'ubour_pending_trip';
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 function tripShareText(t, officeName) {
   const link = window.location.origin + '/?trip=' + encodeURIComponent(t.id);
-  return '🚌 رحلة من ' + t.from_place + ' إلى ' + t.to_place + '\n'
-    + '📅 ' + fmtDateAr(t.trip_date) + ' — ' + fmtTime12(t.trip_time) + '\n'
-    + '💰 ' + fmtPrice(t.price) + ' ' + currencyLabel(t.currency) + '\n'
-    + '🪑 ' + t.seats_available + ' مقعد متاح\n'
-    + (officeName ? '🏢 ' + officeName + '\n' : '')
+  const title = String(t.trip_title || '').trim();
+  const route = String(t.route_details || '').trim();
+  const am = String(t.amenities || '').split(/[,،]/).map((x) => x.trim()).filter(Boolean).join('، ');
+  return '🚌 *' + (officeName || 'رحلة جديدة') + '*\n'
+    + (title ? '🏷️ *نوع الرحلة:* ' + title + '\n' : '')
+    + '📍 *الرحلة:* ' + t.from_place + ' ⬅️ ' + t.to_place + '\n'
+    + '📅 *التاريخ والوقت:* ' + fmtDateAr(t.trip_date) + ' — ' + fmtTime12(t.trip_time) + '\n'
+    + (route ? '🛣️ *المسار:* ' + route + '\n' : '')
+    + '💰 *السعر:* ' + fmtPrice(t.price) + ' ' + currencyLabel(t.currency) + '\n'
+    + '🪑 *المقاعد المتاحة:* ' + t.seats_available + '\n'
+    + (am ? '✨ *المميزات:* ' + am + '\n' : '')
     + (t.accepts_parcels ? '📦 تستقبل طرود\n' : '')
-    + '\nاحجز مقعدك من هنا:\n' + link;
+    + '\n🔗 *رابط التفاصيل والحجز:*\n' + link;
 }
-function shareTrip(t, officeName) { openExternal('https://wa.me/?text=' + encodeURIComponent(tripShareText(t, officeName))); }
+/** على الجوال: قائمة المشاركة الأصلية للنظام (يختار المستخدم أي واتساب: العادي أو الأعمال) — وإلا رابط wa.me القياسي */
+function shareTrip(t, officeName) {
+  const text = tripShareText(t, officeName);
+  const waUrl = 'https://wa.me/?text=' + encodeURIComponent(text);
+  if (navigator.share && /Android|iPhone|iPad|iPod/i.test(navigator.userAgent || '')) {
+    navigator.share({ text: text }).catch((e) => { if (!e || e.name !== 'AbortError') openExternal(waUrl); });
+    return;
+  }
+  openExternal(waUrl);
+}
 function savePendingTrip(id) { try { localStorage.setItem(PENDING_TRIP_KEY, JSON.stringify({ id: id, ts: Date.now() })); } catch (e) { /* تجاهل */ } }
 function readPendingTrip() {
   try {
@@ -2373,7 +2411,7 @@ async function renderOfficeRequests(office, cached) {
         ${b.ready_at && !cancelled ? '<div class="remind-box ok">✅ المسافر أكّد جاهزيته للرحلة</div>' : ''}
         ${cancelled && b.cancel_reason ? `<div class="lc-sub" style="color:var(--error); margin-bottom:10px;">سبب الإلغاء (${who}): ${esc(b.cancel_reason)}</div>` : ''}
         <div class="lc-actions lc-actions-wrap">
-          ${pending ? `<button type="button" class="act-btn act-confirm" data-confirm-booking="${esc(b.id)}">✅ تأكيد</button><button type="button" class="act-btn act-reject" data-reject-booking="${esc(b.id)}">❌ عدم تأكيد</button>` : ''}
+          ${pending ? `<div class="confirm-split"><button type="button" class="act-btn act-wa" data-confirm-booking="${esc(b.id)}">${ICONS.whatsapp}تأكيد عبر واتساب</button><button type="button" class="act-direct" data-direct-confirm="${esc(b.id)}" aria-label="تأكيد مباشر من التطبيق" title="تأكيد مباشر من التطبيق">✅</button></div><button type="button" class="act-btn act-reject" data-reject-booking="${esc(b.id)}">❌ عدم تأكيد</button>` : ''}
           ${confirmed ? `<button type="button" class="act-btn act-reject" data-cancel-confirmed="${esc(b.id)}">إلغاء الحجز المؤكَّد</button>` : ''}
           ${!cancelled ? `<button type="button" class="whatsapp-btn" data-wa-booking="${esc(b.id)}">${ICONS.whatsapp}واتساب</button>` : ''}
         </div>
@@ -2418,6 +2456,9 @@ async function renderOfficeRequests(office, cached) {
   list.querySelectorAll('[data-cancel-confirmed]').forEach(btn => {
     btn.addEventListener('click', () => openCancelModal(btn.dataset.cancelConfirmed, 'office', 'booking', 'cancel-confirmed'));
   });
+  list.querySelectorAll('[data-direct-confirm]').forEach(btn => {
+    btn.addEventListener('click', () => { const x = byId[btn.dataset.directConfirm]; if (x) openDirectConfirm(x); });
+  });
 }
 
 function tripStatusLabel(status) {
@@ -2451,7 +2492,9 @@ async function renderOfficeTrips(office, cached) {
         <span class="lc-price">${esc(t.price)} ${currencyLabel(t.currency)}</span>
       </div>
       <div class="lc-route">${ICONS.route}<span>${esc(t.from_place)}</span>${ICONS.chevron}<span>${esc(t.to_place)}</span></div>
+      ${officePromoNoteHtml(t)}
       ${tripTimesHtml(t)}
+      ${tcExtraHtml(t)}
       <div class="lc-meta"><span>${esc(t.seats_available)}/${esc(t.seats_total)} مقعد متاح</span>${t.vehicle_type ? `<span>${ICONS.bus} ${esc(t.vehicle_type)}</span>` : ''}${t.accepts_parcels ? '<span>📦 طرود</span>' : ''}${isPromoted(t) ? '<span>⭐ مميّزة حتى ' + esc(fmtDMYHM(t.promoted_until)) + '</span>' : ''}</div>
       ${t.status === 'cancelled' && t.cancel_reason ? `<div class="lc-sub" style="color:var(--error); margin-bottom:10px;">سبب الإلغاء: ${esc(t.cancel_reason)}</div>` : ''}
       <div class="lc-actions">
@@ -2482,7 +2525,7 @@ async function renderOfficeTrips(office, cached) {
 
 /* ---- تعديل رحلة (للمكتب/السائق صاحب الرحلة فقط — تفرضه قاعدة البيانات أيضاً عبر RLS) ---- */
 let _editingTrip = null;
-const _TRIP_FIELD_IDS = ['input-trip-from', 'input-trip-to', 'input-trip-vehicle', 'input-trip-price', 'input-trip-seats', 'input-trip-date', 'input-trip-time', 'input-trip-checkin'];
+const _TRIP_FIELD_IDS = ['input-trip-from', 'input-trip-to', 'input-trip-vehicle', 'input-trip-price', 'input-trip-seats', 'input-trip-date', 'input-trip-time', 'input-trip-checkin', 'input-trip-title', 'input-trip-route', 'input-trip-amenities'];
 function updateTripTimePreviews() {
   const t = document.getElementById('input-trip-time').value, c = document.getElementById('input-trip-checkin').value;
   const pt = document.getElementById('preview-trip-time'), pc = document.getElementById('preview-trip-checkin');
@@ -2509,6 +2552,10 @@ function openEditTripModal(trip) {
   document.getElementById('input-trip-checkin').value = String(trip.checkin_time || '').slice(0, 5);
   document.getElementById('input-trip-parcels').checked = !!trip.accepts_parcels;
   document.getElementById('input-trip-parcels-note').value = trip.parcels_note || '';
+  document.getElementById('input-trip-title').value = trip.trip_title || '';
+  document.getElementById('input-trip-route').value = trip.route_details || '';
+  document.getElementById('input-trip-amenities').value = trip.amenities || '';
+  syncAmenityPicks();
   document.getElementById('wrap-trip-parcels-note').classList.toggle('hidden', !trip.accepts_parcels);
   updateTripTimePreviews();
   document.getElementById('modal-add-trip').classList.add('active');
@@ -2562,6 +2609,7 @@ function initOfficeScreen() {
     document.getElementById('input-trip-parcels-note').value = '';
     document.getElementById('wrap-trip-parcels-note').classList.add('hidden');
     updateTripTimePreviews();
+    syncAmenityPicks();
     document.getElementById('modal-add-trip').classList.add('active');
   });
 
@@ -2577,6 +2625,9 @@ function initOfficeScreen() {
     const checkin = document.getElementById('input-trip-checkin').value;
     const parcels = !!document.getElementById('input-trip-parcels').checked;
     const parcelsNote = document.getElementById('input-trip-parcels-note').value.trim().slice(0, 120);
+    const tripTitle = document.getElementById('input-trip-title').value.trim().slice(0, 40);
+    const routeDetails = document.getElementById('input-trip-route').value.trim().slice(0, 160);
+    const amenities = document.getElementById('input-trip-amenities').value.trim().slice(0, 160);
     const errorEl = document.getElementById('error-add-trip');
     errorEl.classList.remove('show');
 
@@ -2611,7 +2662,8 @@ function initOfficeScreen() {
           seats_total: Number(seats), seats_available: Number(seats) - booked,
           trip_date: date, trip_time: time,
           ...((checkin || ('checkin_time' in _editingTrip)) ? { checkin_time: checkin || null } : {}),
-          ...(('accepts_parcels' in _editingTrip) ? { accepts_parcels: parcels, parcels_note: parcels ? (parcelsNote || null) : null } : {})
+          ...(('accepts_parcels' in _editingTrip) ? { accepts_parcels: parcels, parcels_note: parcels ? (parcelsNote || null) : null } : {}),
+          ...((('trip_title' in _editingTrip) || tripTitle || routeDetails || amenities) ? { trip_title: tripTitle || null, route_details: routeDetails || null, amenities: amenities || null } : {})
         });
         _editingTrip = null;
         closeModals();
@@ -2625,11 +2677,12 @@ function initOfficeScreen() {
     }
 
     try {
-      await UbourDB.createTrip({ officeId: office.id, officeName: office.name, from, to, price, currency, seatsTotal: seats, date, time, vehicleType, checkin, parcels, parcelsNote });
+      await UbourDB.createTrip({ officeId: office.id, officeName: office.name, from, to, price, currency, seatsTotal: seats, date, time, vehicleType, checkin, parcels, parcelsNote, tripTitle, routeDetails, amenities });
       closeModals();
       await renderOfficeTrips(office);
       showToast('تم نشر الرحلة بنجاح', 'success');
-      ['input-trip-from', 'input-trip-to', 'input-trip-vehicle', 'input-trip-price', 'input-trip-seats', 'input-trip-date', 'input-trip-time', 'input-trip-checkin'].forEach(id => document.getElementById(id).value = '');
+      ['input-trip-from', 'input-trip-to', 'input-trip-vehicle', 'input-trip-price', 'input-trip-seats', 'input-trip-date', 'input-trip-time', 'input-trip-checkin', 'input-trip-title', 'input-trip-route', 'input-trip-amenities'].forEach(id => document.getElementById(id).value = '');
+      syncAmenityPicks();
       updateTripTimePreviews();
     } catch (e) {
       showToast((e && (e.code === '42501' || /row-level security/i.test(String(e.message || '')))) ? 'اشتراكك منتهٍ أو غير مفعّل — تواصل مع الإدارة للتجديد' : 'تعذّر نشر الرحلة، حاول مجدداً', 'error');
@@ -3320,6 +3373,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   initTravelerScreen();
   initOfficeScreen();
   initAdminScreen();
+  initOfficeAddons();
   initModals();
   initCancelModal();
   initPWA();
@@ -3780,6 +3834,7 @@ const NotifUI = (() => {
   function onInsert(n) {
     if (!n || items.some((x) => x.id === n.id)) return;
     items.unshift(n); renderBadge();
+    try { if (/^booking_(confirmed|rejected|cancelled_by_office)$/.test(String(n.kind)) && document.getElementById('screen-traveler').classList.contains('active')) renderTravelerBookings(); } catch (e) { /* تجاهل */ }
     showToast(n.title + (n.body ? ' — ' + String(n.body).split('\n')[0] : ''), 'info', 6000);
     deviceNotify(n);
     if (isOpen()) renderList(new Set([n.id]));
@@ -3855,3 +3910,112 @@ const NotifUI = (() => {
   }
   return { start, stop, bindBells, removePush, _items: () => items };
 })();
+
+
+/* =========================================================================
+   v5.5 — إعلانات المكتب (عرض فقط) + تفاصيل الرحلة + التأكيد المباشر
+   كتلة مستقلة: لا تغيّر أي دالة قائمة، وتُستدعى من initOfficeAddons فقط.
+   ========================================================================= */
+function fmtDMYT12(d) {
+  const x = new Date(d);
+  if (isNaN(x.getTime())) return '';
+  return fmtDMY(x) + ' — ' + fmtTime12(String(x.getHours()).padStart(2, '0') + ':' + String(x.getMinutes()).padStart(2, '0'));
+}
+/** وسام الإعلان على كرت رحلة المكتب: حالة الإعلان + وقت البدء والانتهاء */
+function officePromoNoteHtml(t) {
+  if (!t || !t.promoted_until) return '';
+  const until = new Date(t.promoted_until);
+  if (isNaN(until.getTime())) return '';
+  const active = until.getTime() > Date.now();
+  const from = t.promoted_from ? new Date(t.promoted_from) : null;
+  return '<div class="promo-note' + (active ? '' : ' ended') + '"><b>' + (active ? '⭐ تم الإعلان عن هذه الرحلة' : '⭐ انتهى الإعلان عن هذه الرحلة') + '</b>'
+    + (from && !isNaN(from.getTime()) ? '<span>بدأ الإعلان: ' + esc(fmtDMYT12(from)) + '</span>' : '')
+    + '<span>' + (active ? 'ينتهي الإعلان: ' : 'انتهى في: ') + esc(fmtDMYT12(until)) + '</span></div>';
+}
+/** تبويب «إعلاناتي»: رحلات المكتب التي أعلن عنها المدير — عرض ومعاينة فقط */
+async function renderOfficeAds(office) {
+  const list = document.getElementById('office-ads-list');
+  if (!list || !office) return;
+  showSkeleton(list, 2);
+  const now = Date.now();
+  const trips = (await UbourDB.getTripsByOffice(office.id)).filter((t) => t.promoted_until && !isPastRetention(t));
+  if (!trips.length) {
+    list.innerHTML = `<div class="empty-state">${ICONS.info}<div class="mt-2">لا توجد رحلات معلن عنها حتى الآن</div></div>`;
+    return;
+  }
+  const isOn = (t) => new Date(t.promoted_until).getTime() > now;
+  trips.sort((a, b) => ((isOn(b) ? 1 : 0) - (isOn(a) ? 1 : 0)) || (new Date(b.promoted_until) - new Date(a.promoted_until)));
+  list.innerHTML = trips.map((t) => `
+    <div class="list-card">
+      <div class="lc-route">${ICONS.route}<span>${esc(t.from_place)}</span>${ICONS.chevron}<span>${esc(t.to_place)}</span></div>
+      ${officePromoNoteHtml(t)}
+      ${tripTimesHtml(t)}
+      ${tcExtraHtml(t)}
+      <div class="lc-meta"><span>${esc(t.seats_available)}/${esc(t.seats_total)} مقعد متاح</span>${t.vehicle_type ? `<span>${ICONS.bus} ${esc(t.vehicle_type)}</span>` : ''}</div>
+    </div>`).join('');
+}
+
+/* ---- مميزات الرحلة: أزرار اختيار سريعة تكتب في الحقل النصي ---- */
+const TRIP_AMENITIES = ['تكييف ممتاز', 'شواحن هواتف', 'مقاعد مريحة', 'واي فاي', 'ماء ومرطبات', 'مقاعد VIP'];
+function _amenList() {
+  const inp = document.getElementById('input-trip-amenities');
+  return String((inp && inp.value) || '').split(/[,،]/).map((x) => x.trim()).filter(Boolean);
+}
+function syncAmenityPicks() {
+  const cur = _amenList();
+  document.querySelectorAll('#amenity-picks [data-amenity]').forEach((b) => b.classList.toggle('on', cur.indexOf(b.dataset.amenity) !== -1));
+}
+
+/* ---- التأكيد المباشر من التطبيق (بديل واتساب) ---- */
+let _directCtx = null;
+function openDirectConfirm(x) {
+  _directCtx = { id: x.b.id };
+  const sum = document.getElementById('direct-confirm-summary');
+  if (sum) sum.textContent = x.b.traveler_name + ' — ' + x.trip.from_place + ' ← ' + x.trip.to_place + ' — ' + fmtDateAr(x.trip.trip_date) + ' ' + fmtTime12(x.trip.trip_time) + ' — ' + x.b.seats + ' مقعد';
+  openOverlay('modal-confirm-booking');
+}
+
+function initOfficeAddons() {
+  const $ = (id) => document.getElementById(id);
+
+  // أزرار المميزات
+  const picks = $('amenity-picks'), amInp = $('input-trip-amenities');
+  if (picks && amInp) {
+    TRIP_AMENITIES.forEach((a) => {
+      const b = document.createElement('button');
+      b.type = 'button'; b.className = 'amen-pick'; b.dataset.amenity = a; b.textContent = a;
+      b.addEventListener('click', () => {
+        const cur = _amenList(), i = cur.indexOf(a);
+        if (i === -1) cur.push(a); else cur.splice(i, 1);
+        amInp.value = cur.join('، ');
+        syncAmenityPicks();
+      });
+      picks.appendChild(b);
+    });
+    amInp.addEventListener('input', syncAmenityPicks);
+  }
+
+  // تبويبا «رحلاتي / إعلاناتي»
+  document.querySelectorAll('[data-office-subtab]').forEach((btn) => btn.addEventListener('click', () => {
+    const k = btn.dataset.officeSubtab;
+    document.querySelectorAll('[data-office-subtab]').forEach((x) => x.classList.toggle('active', x === btn));
+    $('office-trips-pane').classList.toggle('hidden', k !== 'trips');
+    $('office-ads-pane').classList.toggle('hidden', k !== 'ads');
+    if (k === 'ads' && _currentProfileCache) renderOfficeAds(_currentProfileCache);
+  }));
+
+  // نافذة التأكيد المباشر
+  const ok = $('btn-direct-confirm');
+  if (ok) ok.addEventListener('click', async () => {
+    if (!_directCtx || ok.disabled) return;
+    ok.classList.add('loading'); ok.disabled = true;
+    try {
+      await UbourDB.updateBookingStatus(_directCtx.id, 'completed');
+      closeModals(); _directCtx = null;
+      showToast('تم تأكيد الحجز وإبلاغ المسافر داخل التطبيق ✅', 'success');
+    } catch (e) { showToast(bookingErrorMessage(e), 'error', 5000); console.error(e); }
+    ok.classList.remove('loading'); ok.disabled = false;
+    const me = _currentProfileCache || await UbourDB.getCurrentProfile();
+    if (me) await renderOfficeRequests(me);
+  });
+}

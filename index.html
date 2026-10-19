@@ -1341,6 +1341,27 @@ button, a, .nav-item { touch-action: manipulation; }
 .guest-cta-text { font-size: 13px; font-weight: 800; text-align: center; margin-bottom: 8px; color: var(--white); }
 .guest-cta-actions { display: flex; gap: 8px; }
 .guest-cta-actions .btn { margin-top: 0; padding: 12px; font-size: 14px; }
+
+/* v5.5 — تفاصيل الرحلة + إعلانات المكتب + التأكيد المزدوج */
+.tc-extra { display: flex; flex-direction: column; gap: 8px; margin: 0 0 8px; }
+.tc-tag { align-self: flex-start; display: inline-flex; align-items: center; gap: 4px; padding: 3px 12px; border-radius: 999px; font-size: 12px; font-weight: 800; color: var(--gold-400); background: rgba(201,161,92,0.14); border: 1px solid rgba(201,161,92,0.5); }
+.tc-route-details { display: flex; gap: 8px; align-items: flex-start; font-size: 13px; line-height: 1.7; color: var(--text-primary); }
+.tc-amen { display: flex; flex-wrap: wrap; gap: 6px; }
+.tc-amen-chip { padding: 2px 10px; border-radius: 999px; font-size: 11.5px; font-weight: 700; color: var(--text-secondary); background: rgba(255,255,255,0.06); border: 1px solid var(--navy-border); }
+.amen-picks { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.amen-pick { padding: 5px 11px; border-radius: 999px; border: 1px solid var(--navy-border); background: rgba(255,255,255,0.04); color: var(--text-secondary); font-family: inherit; font-size: 12px; font-weight: 700; cursor: pointer; }
+.amen-pick.on { color: #0b1b2b; background: var(--gold-400); border-color: var(--gold-400); }
+.sub-tabs { display: flex; gap: 8px; padding: 0 var(--space-5) 12px; }
+.sub-tab { flex: 1; padding: 10px 8px; border-radius: var(--radius-sm); border: 1px solid var(--navy-border); background: rgba(255,255,255,0.04); color: var(--text-secondary); font-family: inherit; font-weight: 800; font-size: 13px; cursor: pointer; }
+.sub-tab.active { color: #0b1b2b; background: var(--gold-400); border-color: var(--gold-400); }
+.promo-note { display: flex; flex-direction: column; gap: 3px; margin: 0 0 10px; padding: 9px 12px; border-radius: 12px; font-size: 12.5px; line-height: 1.7; background: rgba(201,161,92,0.1); border: 1px solid rgba(201,161,92,0.5); color: var(--text-primary); }
+.promo-note b { color: var(--gold-400); font-size: 13px; }
+.promo-note.ended { background: rgba(255,255,255,0.04); border-color: var(--navy-border); color: var(--text-secondary); }
+.promo-note.ended b { color: var(--text-secondary); }
+.confirm-split { display: flex; flex: 1 1 100%; gap: 6px; align-items: stretch; }
+.act-wa { flex: 1 1 auto; display: inline-flex; align-items: center; justify-content: center; gap: 6px; background: #1FAA59; color: #fff; border-color: #1FAA59; }
+.act-wa svg { width: 16px; height: 16px; }
+.act-direct { flex: 0 0 46px; border-radius: var(--radius-sm); border: 1px solid var(--success); background: rgba(45,212,167,0.12); color: var(--success); font-size: 17px; line-height: 1; cursor: pointer; }
 </style>
 </head>
 <body>
@@ -1834,7 +1855,6 @@ button, a, .nav-item { touch-action: manipulation; }
           </div>
           <button type="button" class="bell-btn" data-open-notifications aria-label="التنبيهات"><span class="bell-badge" data-notif-badge hidden>0</span></button>
         </div>
-        <div id="ads-strip-office" class="ads-strip hidden"></div>
         <div class="service-cards" id="office-requests-list" style="margin-bottom:24px;"></div>
         <div data-download-slot></div>
       </div>
@@ -1844,7 +1864,17 @@ button, a, .nav-item { touch-action: manipulation; }
           <h2>رحلاتي</h2>
           <button class="btn-install-cta" id="btn-open-add-trip">+ إضافة رحلة</button>
         </div>
-        <div class="service-cards" id="office-trips-list" style="margin-bottom:24px;"></div>
+        <div class="sub-tabs" role="tablist">
+          <button type="button" class="sub-tab active" data-office-subtab="trips" role="tab">رحلاتي</button>
+          <button type="button" class="sub-tab" data-office-subtab="ads" role="tab">إعلاناتي 📣</button>
+        </div>
+        <div id="office-trips-pane">
+          <div class="service-cards" id="office-trips-list" style="margin-bottom:24px;"></div>
+        </div>
+        <div id="office-ads-pane" class="hidden">
+          <p class="field-hint" style="padding:0 var(--space-5) 10px;">رحلاتك التي أُعلن عنها من الإدارة — للعرض والمعاينة فقط.</p>
+          <div class="service-cards" id="office-ads-list" style="margin-bottom:24px;"></div>
+        </div>
       </div>
 
       <div id="office-view-support" class="home-view hidden">
@@ -1989,6 +2019,19 @@ button, a, .nav-item { touch-action: manipulation; }
           <div class="time-preview" id="preview-trip-checkin"></div>
         </div>
         <div class="field">
+          <label for="input-trip-title">وصف مميز للرحلة (اختياري)</label>
+          <div class="input-wrap"><input type="text" id="input-trip-title" maxlength="40" autocomplete="off" placeholder="مثال: رحلة VIP، رحلة عائلية، رحلة مباشرة"></div>
+        </div>
+        <div class="field">
+          <label for="input-trip-route">تفاصيل المسار (اختياري)</label>
+          <div class="input-wrap"><input type="text" id="input-trip-route" maxlength="160" autocomplete="off" placeholder="مثال: عبر طريق دوعن / وادي العين إلى المكلا"></div>
+        </div>
+        <div class="field">
+          <label for="input-trip-amenities">مميزات الرحلة (اختياري)</label>
+          <div class="input-wrap"><input type="text" id="input-trip-amenities" maxlength="160" autocomplete="off" placeholder="تكييف ممتاز، شواحن هواتف، مقاعد مريحة"></div>
+          <div class="amen-picks" id="amenity-picks"></div>
+        </div>
+        <div class="field">
           <label class="check-row" for="input-trip-parcels"><input type="checkbox" id="input-trip-parcels"><span>📦 هذه الرحلة تستقبل طرود</span></label>
           <div class="input-wrap hidden" id="wrap-trip-parcels-note"><input type="text" id="input-trip-parcels-note" maxlength="120" placeholder="ملاحظة اختيارية: مثل الشحن حسب الحجم والوزن"></div>
         </div>
@@ -2114,7 +2157,7 @@ button, a, .nav-item { touch-action: manipulation; }
             <label for="input-identity-logo">رابط الشعار (اختياري)</label>
             <div class="input-wrap"><input type="text" id="input-identity-logo" placeholder="https://..." style="direction:ltr; text-align:right;"></div>
           </div>
-          <p class="field-hint" style="margin-bottom:16px;">يُطبَّق الاسم فوراً على كل شاشات التطبيق لجميع المستخدمين الجدد. لتغيير دائم في الكود المصدري راجع js/config.js.</p>
+          <p class="field-hint" style="margin-bottom:16px;">يُطبَّق الاسم فوراً على كل شاشات التطبيق لجميع المستخدمين الجدد. لتغيير دائم في الكود المصدري راجع APP_CONFIG داخل app.js.</p>
           <button class="btn btn-primary" id="btn-save-identity"><span class="btn-label">حفظ</span><span class="spinner"></span></button>
         </div>
       </div>
@@ -2174,6 +2217,18 @@ button, a, .nav-item { touch-action: manipulation; }
         <span class="btn-label">تأكيد الإلغاء وإرسال السبب</span><span class="spinner"></span>
       </button>
       <button class="btn btn-text" data-close-modal style="margin-top:10px;">تراجع</button>
+    </div>
+  </div>
+
+  <!-- تأكيد مباشر للحجز من التطبيق (بديل واتساب) -->
+  <div class="modal-overlay" id="modal-confirm-booking">
+    <div class="modal-sheet">
+      <div class="modal-handle"></div>
+      <h3>هل تود تأكيد هذه الرحلة؟</h3>
+      <p class="lc-sub" id="direct-confirm-summary" style="margin-bottom:6px; line-height:1.8;"></p>
+      <p class="field-hint" style="margin-bottom:14px;">يتحوّل الحجز إلى «مؤكد» فوراً ويصل المسافر تنبيه داخل التطبيق، دون فتح واتساب.</p>
+      <button class="btn btn-primary" id="btn-direct-confirm"><span class="btn-label">تأكيد</span><span class="spinner"></span></button>
+      <button class="btn btn-text" data-close-modal style="margin-top:10px;">إلغاء</button>
     </div>
   </div>
 
