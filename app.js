@@ -125,6 +125,10 @@ const APP_CONFIG = {
   // ---- الحد الأدنى لطول كلمة السر ----
   passwordMinLength: 8,
 
+  // ---- اختيار البريد بلمسة واحدة في التسجيل (Google Identity Services) — معرّف عميل عام، ليس سرّاً ----
+  // اتركه '' لتعطيل الميزة.
+  googleClientId: '430820908733-r86lhtqlk6o9dnv5d5e02j1mju5olikt.apps.googleusercontent.com',
+
   // ---- محافظات اليمن (تُستخدم في اختيار نقطة الانطلاق/الوصول) ----
   yemenGovernorates: [
     'أمانة العاصمة', 'صنعاء', 'عدن', 'تعز', 'الحديدة', 'إب', 'ذمار',
@@ -3374,6 +3378,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   initOfficeScreen();
   initAdminScreen();
   initOfficeAddons();
+  initGoogleEmailPick();
   initModals();
   initCancelModal();
   initPWA();
@@ -4019,3 +4024,92 @@ function initOfficeAddons() {
     if (me) await renderOfficeRequests(me);
   });
 }
+
+
+/* =========================================================================
+   v5.6 — اختيار البريد بلمسة واحدة من حسابات الجهاز (Google Identity Services)
+   الغرض الوحيد: تعبئة حقل البريد في شاشة التسجيل. لا يُستخدم الرمز للدخول،
+   ولا يُرسل لأي جهة، ولا يلمس Supabase ولا منطق التفعيل (رابط التأكيد كالمعتاد).
+   تُحمَّل مكتبة Google عند فتح شاشة التسجيل فقط (لا وزن على بقية التطبيق).
+   ========================================================================= */
+let _gisState = 'idle';      // idle | loading | ready | failed
+let _gisPrompted = false;
+
+function _decodeJwtPayload(token) {
+  const part = String(token || '').split('.')[1];
+  if (!part) return null;
+  let b64 = part.replace(/-/g, '+').replace(/_/g, '/');
+  while (b64.length % 4) b64 += '=';
+  const bin = atob(b64);
+  let pct = '';
+  for (let i = 0; i < bin.length; i++) pct += '%' + ('00' + bin.charCodeAt(i).toString(16)).slice(-2);
+  return JSON.parse(decodeURIComponent(pct));
+}
+
+function _fillRegEmail(email) {
+  const inp = document.getElementById('input-reg-email');
+  if (!inp) return;
+  inp.value = String(email).trim().toLowerCase();
+  inp.dispatchEvent(new Event('input', { bubbles: true }));
+  const wrap = document.getElementById('wrap-reg-email');
+  if (wrap) wrap.classList.remove('has-error');
+  const err = document.getElementById('error-reg-account');
+  if (err) err.classList.remove('show');
+  const pw = document.getElementById('input-reg-password');
+  if (pw) pw.focus();
+}
+
+function _onGoogleCredential(resp) {
+  try {
+    const p = _decodeJwtPayload(resp && resp.credential);
+    if (p && p.email) {
+      _fillRegEmail(p.email);
+      showToast('تم اختيار البريد — أكمل كلمة السر وتأكيدها', 'success');
+    }
+  } catch (e) { /* تجاهل: يكتب المستخدم بريده يدوياً */ }
+}
+
+function _gisSetup() {
+  const box = document.getElementById('google-email-pick');
+  const btnHost = document.getElementById('google-email-btn');
+  if (!box || !btnHost || !window.google || !google.accounts || !google.accounts.id) { _gisState = 'failed'; return; }
+  try {
+    google.accounts.id.initialize({
+      client_id: APP_CONFIG.googleClientId,
+      callback: _onGoogleCredential,
+      auto_select: false,
+      cancel_on_tap_outside: true,
+      use_fedcm_for_prompt: true
+    });
+    box.classList.remove('hidden');
+    const w = Math.round(Math.min(340, Math.max(220, (box.parentElement && box.parentElement.clientWidth) || 300)));
+    google.accounts.id.renderButton(btnHost, { type: 'standard', theme: 'filled_black', size: 'large', shape: 'pill', text: 'continue_with', locale: 'ar', width: w });
+    _gisState = 'ready';
+  } catch (e) { box.classList.add('hidden'); _gisState = 'failed'; }
+}
+
+function _gisOnRegisterShown() {
+  if (_gisState === 'failed' || _gisState === 'loading') return;
+  if (_gisState === 'ready') {
+    if (!_gisPrompted) { _gisPrompted = true; try { google.accounts.id.prompt(); } catch (e) { /* تجاهل */ } }
+    return;
+  }
+  _gisState = 'loading';
+  const sc = document.createElement('script');
+  sc.src = 'https://accounts.google.com/gsi/client';
+  sc.async = true; sc.defer = true;
+  sc.onload = () => {
+    _gisSetup();
+    if (_gisState === 'ready' && !_gisPrompted) { _gisPrompted = true; try { google.accounts.id.prompt(); } catch (e) { /* تجاهل */ } }
+  };
+  sc.onerror = () => { _gisState = 'failed'; };   // بلا إنترنت/محجوب: يبقى الحقل اليدوي كما هو
+  document.head.appendChild(sc);
+}
+
+function initGoogleEmailPick() {
+  const screen = document.getElementById('screen-register-account');
+  if (!APP_CONFIG.googleClientId || !screen || !('MutationObserver' in window)) return;
+  new MutationObserver(() => { if (screen.classList.contains('active')) _gisOnRegisterShown(); })
+    .observe(screen, { attributes: true, attributeFilter: ['class'] });
+}
+
