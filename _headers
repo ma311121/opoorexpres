@@ -1,19 +1,43 @@
-# ترويسات الأمان (Cloudflare Pages / Netlify). ضع هذا الملف بجانب index.html باسم _headers بلا امتداد.
-# GitHub Pages لا يدعم هذا الملف؛ سياسة CSP موجودة أيضاً كـ <meta> داخل index.html لتعمل هناك.
+# ============================================================================
+# عبور إكسبريس — ترويسات الأمان والتخزين المؤقت (Cloudflare Workers/Pages)
+# ضع هذا الملف في جذر المستودع بجانب index.html باسم _headers بلا امتداد.
+#
+# مهم: في Cloudflare إذا تطابقت عدة قواعد تُدمَج ترويساتها. لذلك قاعدة /* لا تحتوي
+# Cache-Control، والتخزين المؤقت يُحدَّد في القواعد الخاصة بالملفات فقط.
+# سياسة CSP مكررة (نفسها حرفياً) في وسم <meta> داخل index.html ما عدا frame-ancestors
+# (لا يعمل في <meta>)؛ الترويسة هي المرجع، والوسم احتياط لا يختلف عنها.
+# ============================================================================
+
 /*
-  Content-Security-Policy: default-src 'self'; script-src 'self' https://cdn.jsdelivr.net https://js.sentry-cdn.com https://browser.sentry-cdn.com https://accounts.google.com/gsi/client; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://accounts.google.com/gsi/style; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https:; connect-src 'self' https://yytkkvgepauahwfvyicp.supabase.co wss://yytkkvgepauahwfvyicp.supabase.co https://o4512211789086720.ingest.us.sentry.io https://accounts.google.com/gsi/; frame-src https://accounts.google.com/gsi/; manifest-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'
-  X-Content-Type-Options: nosniff
+  Content-Security-Policy: default-src 'self'; script-src 'self' https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js https://js.sentry-cdn.com/02ec9669ffc0edabbbdba502f0076f5f.min.js https://browser.sentry-cdn.com/ https://accounts.google.com/gsi/client; style-src 'self' https://fonts.googleapis.com https://accounts.google.com/gsi/style; style-src-elem 'self' https://fonts.googleapis.com https://accounts.google.com/gsi/style; style-src-attr 'unsafe-inline'; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https://yytkkvgepauahwfvyicp.supabase.co; connect-src 'self' https://yytkkvgepauahwfvyicp.supabase.co wss://yytkkvgepauahwfvyicp.supabase.co https://o4512211789086720.ingest.us.sentry.io https://accounts.google.com/gsi/; frame-src https://accounts.google.com/gsi/; manifest-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; upgrade-insecure-requests
+  Strict-Transport-Security: max-age=31536000; includeSubDomains; preload
   X-Frame-Options: DENY
+  X-Content-Type-Options: nosniff
   Referrer-Policy: strict-origin-when-cross-origin
   Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=()
-  Strict-Transport-Security: max-age=31536000; includeSubDomains
   Cross-Origin-Opener-Policy: same-origin-allow-popups
+  X-Permitted-Cross-Domain-Policies: none
 
-/service-worker.js
+# ---------- ملفات التطبيق: تُراجَع مع الخادم في كل مرة (ETag) فتصل التحديثات فوراً ----------
+/
+  Cache-Control: no-cache
+/index.html
   Cache-Control: no-cache
 /app.js
   Cache-Control: no-cache
-/index.html
+/app.css
+  Cache-Control: no-cache
+/sentry-config.js
+  Cache-Control: no-cache
+/legal.js
+  Cache-Control: no-cache
+/legal.css
+  Cache-Control: no-cache
+/terms.html
+  Cache-Control: no-cache
+/privacy.html
+  Cache-Control: no-cache
+/service-worker.js
   Cache-Control: no-cache
 
 /manifest.json
@@ -22,8 +46,22 @@
 
 /.well-known/assetlinks.json
   Content-Type: application/json
-  Access-Control-Allow-Origin: *
   Cache-Control: no-cache
 
-/icons/*
-  Cache-Control: public, max-age=86400
+# ---------- الصور والأيقونات (ثابتة): أسبوع مع تحديث في الخلفية ----------
+/favicon.ico
+  Cache-Control: public, max-age=604800, stale-while-revalidate=86400
+/apple-touch-icon.png
+  Cache-Control: public, max-age=604800, stale-while-revalidate=86400
+/icon-192.png
+  Cache-Control: public, max-age=604800, stale-while-revalidate=86400
+/icon-512.png
+  Cache-Control: public, max-age=604800, stale-while-revalidate=86400
+/icon-maskable-192.png
+  Cache-Control: public, max-age=604800, stale-while-revalidate=86400
+/icon-maskable-512.png
+  Cache-Control: public, max-age=604800, stale-while-revalidate=86400
+/logo-full.png
+  Cache-Control: public, max-age=604800, stale-while-revalidate=86400
+/logo-mark.png
+  Cache-Control: public, max-age=604800, stale-while-revalidate=86400
