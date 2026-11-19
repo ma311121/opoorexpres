@@ -5,12 +5,14 @@
    • الطلبات الخارجية (Supabase وCDN) لا يتدخل فيها نهائياً — لا تُخزَّن بيانات المستخدمين.
    عند أي تحديث للملفات غيّر CACHE_VERSION.
    ========================================================================= */
-const CACHE_VERSION = 'ubour-v5.4.6';
+const CACHE_VERSION = 'ubour-v5.5.1';
 
 const APP_SHELL = [
   './',
   './index.html',
   './app.js',
+  './app.css',
+  './legal.css',
   './sentry-config.js',
   './privacy.html',
   './terms.html',
@@ -47,7 +49,7 @@ self.addEventListener('fetch', (event) => {
   if (url.origin !== self.location.origin) return;           // لا نتدخل في Supabase/CDN
   if (url.pathname.endsWith('.apk')) return;                  // ملف التطبيق يُنزَّل مباشرة دون تخزين
 
-  const isCode = request.mode === 'navigate' || /\.(?:html|js|json)$/.test(url.pathname) || url.pathname.endsWith('/');
+  const isCode = request.mode === 'navigate' || /\.(?:html|js|css|json)$/.test(url.pathname) || url.pathname.endsWith('/');
 
   if (isCode) {
     // الشبكة أولاً
@@ -80,13 +82,22 @@ self.addEventListener('fetch', (event) => {
   );
 });
 
-// عند الضغط على تنبيه الجهاز: نُظهر نافذة التطبيق أو نفتحها
+// عند الضغط على تنبيه الجهاز: نُظهر نافذة التطبيق أو نفتحها، وتنبيه المسار يفتح الرحلة (?alert=رقم-الرحلة)
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
+  const target = (event.notification.data && event.notification.data.url) || './';
   event.waitUntil(
-    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((list) => {
-      for (const c of list) { if ('focus' in c) return c.focus(); }
-      if (self.clients.openWindow) return self.clients.openWindow('./');
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(async (list) => {
+      for (const c of list) {
+        if ('focus' in c) {
+          try {
+            await c.focus();
+            if (target !== './' && 'navigate' in c) await c.navigate(new URL(target, self.registration.scope).href);
+          } catch (e) { /* نكتفي بإظهار النافذة */ }
+          return;
+        }
+      }
+      if (self.clients.openWindow) return self.clients.openWindow(target);
     })
   );
 });
